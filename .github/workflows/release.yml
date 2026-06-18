@@ -19,7 +19,7 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
-      CARGO_TARGET_DIR: ${{ runner.temp }}\cargo-target
+      CARGO_TARGET_DIR: target
 
     steps:
       - name: Checkout release tag
@@ -40,7 +40,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> ${{ env.CARGO_TARGET_DIR }}
+          workspaces: src-tauri -> target
 
       - name: Install dependencies
         run: npm ci
