@@ -1,0 +1,9 @@
+node_modules/
+dist/
+vite-dev.log
+*.local
+prayer-times-macos/
+
+# Tauri/Rust outputs once the desktop shell is added.
+src-tauri/target/
+target/
