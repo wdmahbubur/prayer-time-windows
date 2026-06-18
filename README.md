@@ -218,6 +218,13 @@ porting work. Verify redistribution rights before publishing a public release.
 
 ## Release Notes
 
+### 0.1.8
+
+- Added Hijri date display to both the main app panel and floating widget.
+- Added Hijri day adjustment for local moon-sighting differences.
+- Fixed the main app countdown so visible countdowns update every second.
+- Kept hidden-window alert scheduling optimized for lower battery usage.
+
 ### 0.1.6
 
 - Fixed floating widget dragging with Tauri native window drag support.
