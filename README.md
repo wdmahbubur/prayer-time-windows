@@ -1,50 +1,107 @@
 # Prayer Times for Windows
 
-A Windows desktop prayer-times app inspired by the macOS menu-bar app
-[`tareq1988/prayer-times-macos`](https://github.com/tareq1988/prayer-times-macos).
+A free Windows tray app for Islamic prayer times, Adhan notifications, manual jamaat schedules, a live next-prayer countdown, and a draggable desktop widget.
 
-This port is built with Tauri, React, TypeScript, and Rust. It runs as a lightweight
-tray app on Windows, shows the next prayer with a live countdown, supports manual
-jamaat schedules, notifications, Adhan playback, and a fullscreen Focus Mode.
+![Latest release](https://img.shields.io/github/v/release/wdmahbubur/prayer-time-windows?label=latest)
+![Downloads](https://img.shields.io/github/downloads/wdmahbubur/prayer-time-windows/total)
+![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4)
+![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB)
 
-## Highlights
+---
 
-- Windows tray app with show, hide, and quit actions.
-- Close button hides the app to tray instead of exiting.
-- Live next-prayer countdown and prayer list panel.
-- Calculated prayer times with multiple calculation methods.
-- Manual fixed jamaat schedule mode.
-- Per-prayer notification controls.
-- At-time alerts, before-prayer reminders, Adhan playback, and sample notification.
-- Fullscreen Focus Mode that can block the screen at prayer time.
-- Launch at login support through Tauri autostart.
-- One-shot location detection.
-- Neon material dark UI with responsive settings layout.
-- MSI and NSIS installer generation.
+**Prayer Times for Windows** is a lightweight desktop app that keeps the next **Islamic prayer time** (Salah / Namaz) visible from the Windows tray, shows a live countdown in the app and floating widget, plays **Adhan (Azan)** audio, and sends per-prayer reminders.
 
-## Current Version
+It works offline from your coordinates and supports manual fixed jamaat schedules, multiple calculation methods, Standard / Hanafi Asr, high-latitude handling, Hijri date display, and a fullscreen Focus Mode that can block the screen at prayer time.
 
-`0.1.4`
+This project is inspired by [`tareq1988/prayer-times-macos`](https://github.com/tareq1988/prayer-times-macos), rebuilt for Windows with **Tauri, React, TypeScript, and Rust**.
 
-## Tech Stack
+## Install
 
-- Tauri v2
-- Rust
-- React 19
-- TypeScript
-- Vite
-- Vitest
-- Lucide React icons
+Download the latest Windows installer from [Releases](https://github.com/wdmahbubur/prayer-time-windows/releases/latest).
 
-## Requirements
+Recommended:
 
-- Windows 10 or Windows 11
-- Node.js and npm
-- Rust with Cargo
-- Visual Studio 2022 Build Tools with Desktop development with C++
-- WebView2 Runtime, normally already present on modern Windows
+- `Prayer.Times_0.1.8_x64_en-US.msi` for standard Windows installation.
+- `Prayer.Times_0.1.8_x64-setup.exe` as an alternative setup installer.
 
-## Getting Started
+> **First launch / SmartScreen:** the installers are currently unsigned. Windows SmartScreen may show a warning until the app is signed with a trusted code-signing certificate and builds reputation.
+
+Requirements: **Windows 10 or Windows 11** with Microsoft Edge WebView2 Runtime. WebView2 is normally already installed on modern Windows.
+
+## Features
+
+- **Tray-first Windows app** - show, hide, quit, and close-to-tray behavior.
+- **Live countdown** - next prayer countdown in the main app, tray label, and floating widget.
+- **Desktop widget** - draggable, frameless widget with next prayer, countdown, and Hijri date.
+- **Glanceable prayer panel** - today's prayer list, next prayer highlight, current method, timezone, location, and Hijri date.
+- **Calculation methods** - Muslim World League, ISNA, Umm al-Qura, Egyptian, Karachi, Moonsighting Committee, Diyanet, JAKIM, Kemenag, and Manual.
+- **Madhab and latitude controls** - Standard / Hanafi Asr plus configurable high-latitude rules.
+- **Manual jamaat schedule** - fixed local jamaat times for Fajr, Dhuhr, Asr, Maghrib, and Isha.
+- **Adhan and notifications** - per-prayer at-time alerts, before-prayer reminders, iqamah reminders, and full Adhan playback.
+- **Focus Mode** - fullscreen prayer-time screen blocker with configurable duration and emergency exit.
+- **Location aware** - manual coordinates or one-shot browser location detection.
+- **Hijri date** - app and widget display with day adjustment for local moon sighting.
+- **Launch at login** - optional Windows startup behavior.
+- **Private by design** - no account, no ads, no analytics, and no external prayer-time API.
+
+## Why Prayer Times?
+
+- **Made for Windows** - a resident tray utility with MSI and setup EXE installers.
+- **Lightweight** - Tauri desktop shell instead of a heavy Electron runtime.
+- **Offline calculation** - prayer times are computed locally from coordinates and settings.
+- **User controlled** - manual schedule, per-prayer notifications, and local Hijri adjustment.
+- **Tested core** - calculation adapters, high-latitude behavior, manual offsets, Ishraq, current waqt, and notification defaults are covered by automated tests.
+
+## FAQ
+
+**Is it free?**  
+Yes. The app is free to download and use.
+
+**Does it work offline?**  
+Yes. Prayer times are calculated locally after your location or coordinates are configured.
+
+**Does it track me?**  
+No. There is no account, telemetry, analytics, or ads. Location is used locally to compute prayer times.
+
+**Which calculation methods are supported?**  
+Diyanet, Muslim World League, ISNA, Umm al-Qura, Egyptian General Authority, University of Islamic Sciences Karachi, Moonsighting Committee, JAKIM, Kemenag, and Manual.
+
+**Does it play the full Adhan?**  
+Yes. The app can play Makkah or Madinah Adhan audio and includes a Stop control.
+
+**What is the difference between At time and Before?**  
+`At time` sends an alert at the prayer time. `Before` sends an early reminder before the prayer. `Adhan` controls full Adhan playback for eligible prayers.
+
+**Can I use my mosque's fixed jamaat times?**  
+Yes. Switch to Manual fixed schedule and enter local jamaat times. Editing a jamaat time automatically activates manual mode.
+
+**Why does Windows show a SmartScreen warning?**  
+The current installers are unsigned. To remove most warnings, release builds need to be Authenticode-signed with a trusted code-signing certificate and build Microsoft Defender SmartScreen reputation over time.
+
+## Architecture
+
+```text
+src/
+  core/       Pure TypeScript prayer calculation engine, adapters, settings, tests
+  ui/         React app shell, settings UI, panel, widget, notifications, focus mode
+
+src-tauri/
+  src/        Rust Tauri shell, tray integration, native commands
+  icons/      Windows app icons
+  capabilities/
+              Tauri permissions
+
+public/audio/
+  Adhan and alert audio assets
+
+scripts/
+  sign-windows.ps1
+              Local Windows installer signing helper
+```
+
+The calculation core is UI-free and tested separately from the desktop shell. The Tauri layer owns Windows tray behavior, native window commands, installer output, and app packaging.
+
+## Build & Run
 
 Install dependencies:
 
@@ -58,7 +115,7 @@ Run the web preview:
 npm run dev
 ```
 
-Run the Tauri app in development:
+Run the native Tauri app:
 
 ```powershell
 npm run tauri:dev
@@ -70,59 +127,24 @@ Run tests:
 npm test
 ```
 
-Build the web app:
+Build the web bundle:
 
 ```powershell
 npm run build
 ```
 
-Build the Windows desktop installers:
+Build Windows installers:
 
 ```powershell
+$env:CARGO_TARGET_DIR = "$env:LOCALAPPDATA\prayer-times-windows\cargo-target"
 npm run tauri:build
 ```
 
-If Cargo cannot find the MSVC linker, run the build from a Visual Studio developer
-shell or initialize the build environment first:
+If Cargo cannot find the MSVC linker, install **Visual Studio 2022 Build Tools** with **Desktop development with C++**, then run from a Visual Studio developer shell or initialize the environment first:
 
 ```powershell
 cmd /c "call ""C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"" && npm run tauri:build"
 ```
-
-## Code Signing and SmartScreen
-
-Windows SmartScreen warnings are controlled by Microsoft Defender reputation and
-Authenticode signing, not by installer artwork or UI design. To avoid warnings for
-most users, publish installers signed with a trusted code-signing certificate.
-
-Best production path:
-
-1. Buy/use a trusted Windows code-signing certificate.
-2. Prefer EV code signing or Azure Trusted Signing for fastest SmartScreen trust.
-3. Sign every `.msi` and `.exe` release asset.
-4. Timestamp signatures so they remain valid after the certificate expires.
-5. Keep the same publisher identity across releases so reputation can accumulate.
-
-Tauri's Windows signing guide explains the supported signing paths:
-<https://v2.tauri.app/distribute/sign/windows/>
-
-Microsoft's SmartScreen documentation explains that unknown files or publishers
-may still show warnings until reputation is established:
-<https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation>
-
-### Local Signing
-
-Import a trusted code-signing certificate into `Cert:\CurrentUser\My`, then set
-its SHA-1 thumbprint:
-
-```powershell
-$env:WINDOWS_CERT_THUMBPRINT = "YOUR_CERTIFICATE_THUMBPRINT"
-$env:WINDOWS_TIMESTAMP_URL = "http://timestamp.digicert.com"
-.\scripts\sign-windows.ps1
-```
-
-The script signs and verifies the generated MSI and setup EXE under the Tauri
-bundle output directory.
 
 ## Installer Output
 
@@ -135,86 +157,48 @@ After a successful Tauri build, installers are written under:
 Typical outputs:
 
 ```text
-msi\Prayer Times_0.1.4_x64_en-US.msi
-nsis\Prayer Times_0.1.4_x64-setup.exe
+msi\Prayer Times_0.1.8_x64_en-US.msi
+nsis\Prayer Times_0.1.8_x64-setup.exe
 ```
 
-## Project Structure
+## Code Signing
 
-```text
-src/
-  core/       Prayer calculation engine, settings, adapters, tests
-  ui/         React application shell and desktop UI
+Windows SmartScreen warnings are controlled by Microsoft Defender reputation and Authenticode signing. Installer design cannot remove the warning by itself.
 
-src-tauri/
-  src/        Rust Tauri shell, tray integration, native commands
-  icons/      App icons
-  capabilities/
-              Tauri permissions
+Recommended production path:
 
-public/audio/
-  Adhan and alert audio assets
+1. Use a trusted Windows code-signing certificate.
+2. Prefer EV code signing or Azure Trusted Signing for fastest reputation.
+3. Sign every `.msi` and `.exe` release asset.
+4. Timestamp signatures so they remain valid after certificate expiry.
+5. Keep the same publisher identity across releases.
+
+Local signing helper:
+
+```powershell
+$env:WINDOWS_CERT_THUMBPRINT = "YOUR_CERTIFICATE_THUMBPRINT"
+$env:WINDOWS_TIMESTAMP_URL = "http://timestamp.digicert.com"
+.\scripts\sign-windows.ps1
 ```
 
-## Main Features
+See Tauri's Windows signing guide: <https://v2.tauri.app/distribute/sign/windows/>
 
-### Prayer Calculation
+## Releasing
 
-The TypeScript core includes built-in calculation adapters, high-latitude handling,
-manual offsets, manual jamaat schedules, current waqt logic, Ishraq calculation,
-and date/timezone helpers.
-
-### Notifications
-
-The Notifications screen uses these terms:
-
-- `At time`: send an alert at the prayer time.
-- `Before`: send an early reminder before the prayer time.
-- `Adhan`: play full Adhan audio for eligible prayers.
-
-If the default early reminder is off, enabling `Before` for a specific prayer uses
-a 10 minute lead time by default.
-
-### Manual Schedule
-
-Manual fixed schedule mode lets users enter fixed jamaat times for Fajr, Dhuhr,
-Asr, Maghrib, and Isha. Editing any manual time automatically switches the app to
-manual mode.
-
-### Focus Mode
-
-Focus Mode can show the native app window fullscreen and always-on-top at prayer
-time. It can be triggered from calculated times or exact manual jamaat times.
-
-### Tray Behavior
-
-The app is designed to behave like a resident tray utility:
-
-- Clicking the window close button hides it to tray.
-- The tray menu can show, hide, or quit the app.
-- Quit exits the process fully.
-
-## Verification
-
-The current app has been verified with:
+1. Bump the version in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
+2. Add release notes in this README.
+3. Run:
 
 ```powershell
 npm test
 npm run build
+$env:CARGO_TARGET_DIR = "$env:LOCALAPPDATA\prayer-times-windows\cargo-target"
 npm run tauri:build
 ```
 
-Current test coverage includes prayer calculation adapters, golden rows, current
-waqt behavior, manual offsets, high-latitude behavior, Ishraq, and notification
-defaults.
-
-## Attribution
-
-This Windows app was inspired by and initially analyzed against
-[`tareq1988/prayer-times-macos`](https://github.com/tareq1988/prayer-times-macos).
-
-Audio assets were copied from the referenced macOS project resources during the
-porting work. Verify redistribution rights before publishing a public release.
+4. Commit the version bump.
+5. Tag the release, for example `v0.1.8`.
+6. Push the tag and upload the MSI/EXE to GitHub Releases.
 
 ## Release Notes
 
@@ -260,5 +244,18 @@ porting work. Verify redistribution rights before publishing a public release.
 
 ### 0.1.0
 
-- Initial Windows Tauri app with prayer calculation, settings, tray, notifications,
-  audio playback, onboarding, and installer output.
+- Initial Windows Tauri app with prayer calculation, settings, tray, notifications, audio playback, onboarding, and installer output.
+
+## Attribution
+
+Inspired by [`tareq1988/prayer-times-macos`](https://github.com/tareq1988/prayer-times-macos).
+
+Audio assets were copied from the referenced macOS project resources during the porting work. Verify redistribution rights before publishing a public release.
+
+## License
+
+No license file has been added yet. Add a `LICENSE` file before encouraging public reuse or redistribution.
+
+---
+
+Keywords: Windows prayer times app · tray Adhan / Azan app for Windows · Islamic Salah / Namaz times · Muslim prayer reminder · Diyanet namaz vakti · waktu solat Malaysia JAKIM · jadwal sholat Indonesia Kemenag · free prayer time app for Windows · ISNA · Umm al-Qura · Muslim World League · Karachi · Egyptian calculation methods.
