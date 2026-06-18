@@ -185,20 +185,29 @@ See Tauri's Windows signing guide: <https://v2.tauri.app/distribute/sign/windows
 
 ## Releasing
 
+GitHub Actions builds and publishes Windows releases automatically from version tags.
+
 1. Bump the version in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
 2. Add release notes in this README.
-3. Run:
+3. Run local verification:
 
 ```powershell
 npm test
 npm run build
-$env:CARGO_TARGET_DIR = "$env:LOCALAPPDATA\prayer-times-windows\cargo-target"
-npm run tauri:build
 ```
 
 4. Commit the version bump.
-5. Tag the release, for example `v0.1.8`.
-6. Push the tag and upload the MSI/EXE to GitHub Releases.
+5. Tag the release and push the tag:
+
+```powershell
+git tag v0.1.9
+git push origin main
+git push origin v0.1.9
+```
+
+6. The `Release` workflow builds on `windows-latest`, runs tests, creates the MSI and setup EXE, uploads workflow artifacts, and attaches both installers to the GitHub Release.
+
+To re-run a release for an existing tag, open **Actions -> Release -> Run workflow** and enter the tag, for example `v0.1.9`.
 
 ## Release Notes
 
