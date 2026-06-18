@@ -27,7 +27,7 @@ import { civilDateFromDate, formatClock, zonedMidnight } from "../core/timeZone"
 import { ishraq, longCountdown, nextPrayer, orderedTimes, shortCountdown } from "../core/prayerTimes";
 import { defaultJamaatTimes, defaultPrayerNotification, defaultSettings, resolvedNotification } from "../core/settings";
 import { isObligatory } from "../core/types";
-import type { AppSettings, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
+import type { AppSettings, CalculationMethodAdapter, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
 
 type Tab = "general" | "location" | "calculation" | "notifications" | "focus";
 
@@ -64,13 +64,23 @@ export function App() {
   const timeZone = settings.timeZoneMode.kind === "explicit"
     ? settings.timeZoneMode.identifier
     : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const method = resolveMethod(settings.methodId, settings.hanafiAsr, settings.manualParameters) ?? MWLAdapter;
+  const method = useMemo(
+    () => resolveMethod(settings.methodId, settings.hanafiAsr, settings.manualParameters) ?? MWLAdapter,
+    [settings.hanafiAsr, settings.manualParameters, settings.methodId],
+  );
   const coordinates = settings.manualCoordinates;
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+    let timer: number | undefined;
+    const refresh = () => {
+      setNow(new Date());
+      timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
+    };
+    timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [isWidget]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,19 +136,10 @@ export function App() {
     await endNativeFocusMode();
   };
 
-  const clock = useMemo(() => {
-    const params = method.resolve(coordinates);
-    if (settings.highLatitudeRule !== "automatic") params.highLatitudeRule = settings.highLatitudeRule;
-    const { today, tomorrow } = calculateTodayAndTomorrow(now, coordinates, params, timeZone);
-    const resolved = settings.calculationMode === "manual"
-      ? {
-          today: applyManualSchedule(today, settings, timeZone),
-          tomorrow: applyManualSchedule(tomorrow, settings, timeZone),
-        }
-      : { today, tomorrow };
-    const next = nextPrayer(resolved.today, now) ?? nextPrayer(resolved.tomorrow, now);
-    return { today: resolved.today, tomorrow: resolved.tomorrow, next };
-  }, [coordinates, method, now, settings, timeZone]);
+  const clock = useMemo(
+    () => buildPrayerClock(now, settings, method, coordinates, timeZone),
+    [coordinates, method, now, settings, timeZone],
+  );
 
   const secondsUntilNext = clock.next ? Math.max(0, (clock.next.time.getTime() - now.getTime()) / 1000) : 0;
   const trayLabel = clock.next ? `${prayerNames[clock.next.prayer]} in ${shortCountdown(secondsUntilNext)}` : "Prayer Times";
@@ -149,19 +150,39 @@ export function App() {
   }, [isWidget, settings.showPrayerWidget, storeReady]);
 
   useEffect(() => {
-    void fireDueAlerts({
-      now,
-      today: clock.today,
-      tomorrow: clock.tomorrow,
-      settings,
-      timeZone,
-      fired: firedAlerts.current,
-      playSound: playNotificationSound,
-      showFocus: async (prayer) => {
-        if (shouldFocus(settings, prayer)) await beginFocusMode(prayer);
-      },
-    });
-  }, [now, clock.today, clock.tomorrow, settings, timeZone]);
+    if (isWidget) return;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const checkAlerts = async () => {
+      const currentNow = new Date();
+      const currentClock = buildPrayerClock(currentNow, settings, method, coordinates, timeZone);
+      await fireDueAlerts({
+        now: currentNow,
+        today: currentClock.today,
+        tomorrow: currentClock.tomorrow,
+        settings,
+        timeZone,
+        fired: firedAlerts.current,
+        playSound: playNotificationSound,
+        showFocus: async (prayer) => {
+          if (shouldFocus(settings, prayer)) await beginFocusMode(prayer);
+        },
+      });
+      if (!cancelled) {
+        timer = window.setTimeout(
+          checkAlerts,
+          nextAlertCheckDelay(currentNow, currentClock.today, currentClock.tomorrow, settings, timeZone, firedAlerts.current),
+        );
+      }
+    };
+
+    void checkAlerts();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [coordinates, isWidget, method, settings, timeZone]);
 
   if (isWidget) {
     return (
@@ -380,7 +401,7 @@ function GeneralTab({ settings, update }: SettingsTabProps) {
     <>
       <Section title="Startup"><SettingRow label="Launch at login" control={<Switch on={settings.launchAtLogin} onClick={toggleLaunchAtLogin} />} /></Section>
       <Section title="Desktop widget">
-        <SettingRow label="Show floating widget" subLabel="Always-on-top next prayer time and countdown." control={<Switch on={settings.showPrayerWidget} onClick={togglePrayerWidget} />} />
+        <SettingRow label="Show floating widget" subLabel="Desktop widget with next prayer time and countdown." control={<Switch on={settings.showPrayerWidget} onClick={togglePrayerWidget} />} />
         <SettingRow label="Widget controls" subLabel="Drag the widget from its body. Use the X button to hide it." control={<button className="small-button" onClick={() => setWidgetVisibility(true)}><Pin size={15} /> Show now</button>} />
       </Section>
       <Section title="Menu bar">
@@ -761,6 +782,32 @@ function Onboarding({ settings, update }: SettingsTabProps) {
   );
 }
 
+function nextClockRefreshDelay(isWidget: boolean): number {
+  const interval = isWidget ? 1_000 : 60_000;
+  const now = Date.now();
+  return interval - (now % interval) + 25;
+}
+
+function buildPrayerClock(
+  now: Date,
+  settings: AppSettings,
+  method: CalculationMethodAdapter,
+  coordinates: Coordinates,
+  timeZone: string,
+) {
+  const params = method.resolve(coordinates);
+  if (settings.highLatitudeRule !== "automatic") params.highLatitudeRule = settings.highLatitudeRule;
+  const { today, tomorrow } = calculateTodayAndTomorrow(now, coordinates, params, timeZone);
+  const resolved = settings.calculationMode === "manual"
+    ? {
+        today: applyManualSchedule(today, settings, timeZone),
+        tomorrow: applyManualSchedule(tomorrow, settings, timeZone),
+      }
+    : { today, tomorrow };
+  const next = nextPrayer(resolved.today, now) ?? nextPrayer(resolved.tomorrow, now);
+  return { today: resolved.today, tomorrow: resolved.tomorrow, next };
+}
+
 function applyManualSchedule(day: PrayerTimes, settings: AppSettings, timeZone: string): PrayerTimes {
   const civil = civilDateFromDate(day.date, timeZone);
   const base = zonedMidnight(civil, timeZone);
@@ -945,6 +992,46 @@ async function fireDueAlerts({
       }
     }
   }
+}
+
+function nextAlertCheckDelay(
+  now: Date,
+  today: PrayerTimes,
+  tomorrow: PrayerTimes,
+  settings: AppSettings,
+  timeZone: string,
+  fired: Set<string>,
+): number {
+  const upcoming: number[] = [];
+  for (const day of [today, tomorrow]) {
+    for (const entry of orderedTimes(day)) {
+      const civil = civilDateFromDate(entry.time, timeZone);
+      const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
+      const cfg = resolvedNotification(settings, entry.prayer);
+      if (settings.masterNotificationsEnabled && cfg.notify) {
+        addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:adhan`, notificationTime(entry.prayer, entry.time, settings));
+        if (cfg.earlyReminderEnabled) {
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:early`, new Date(entry.time.getTime() - cfg.earlyLeadMinutes * 60_000));
+        }
+        if (isObligatory(entry.prayer) && cfg.iqamahOffsetMinutes > 0) {
+          addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:iqamah`, new Date(entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000));
+        }
+      }
+      if (shouldFocus(settings, entry.prayer)) {
+        addPendingAlertTime(upcoming, fired, `${dayKey}:${entry.prayer}:focus`, entry.time);
+      }
+    }
+  }
+
+  const next = upcoming
+    .filter((time) => time > now.getTime() + 50)
+    .sort((a, b) => a - b)[0];
+  if (!next) return 60_000;
+  return Math.min(60_000, Math.max(250, next - now.getTime() - 500));
+}
+
+function addPendingAlertTime(upcoming: number[], fired: Set<string>, key: string, at: Date) {
+  if (!fired.has(key)) upcoming.push(at.getTime());
 }
 
 function notificationTime(prayer: Prayer, time: Date, settings: AppSettings): Date {
