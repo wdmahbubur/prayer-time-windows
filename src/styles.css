@@ -33,6 +33,15 @@ body {
   min-width: 980px;
   background: var(--bg-0);
 }
+body.widget-body {
+  min-width: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
 button, input, select { font: inherit; }
 button { color: inherit; }
 button:disabled { opacity: 0.5; cursor: default; }
@@ -703,4 +712,113 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 22px;
+}
+
+.prayer-widget {
+  width: min(100vw, 320px);
+  height: min(100vh, 118px);
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  color: var(--text);
+  background:
+    linear-gradient(135deg, rgba(40,247,191,0.18), transparent 48%),
+    linear-gradient(235deg, rgba(255,79,216,0.16), transparent 54%),
+    rgba(7, 17, 16, 0.88);
+  border: 1px solid rgba(40,247,191,0.28);
+  border-radius: 18px;
+  box-shadow: 0 20px 48px rgba(0,0,0,0.48), 0 0 32px rgba(40,247,191,0.22), inset 0 1px 0 rgba(255,255,255,0.1);
+  backdrop-filter: blur(22px) saturate(170%);
+  user-select: none;
+}
+.prayer-widget section {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.widget-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #04100d;
+  background: linear-gradient(135deg, var(--neon), var(--neon-2));
+  box-shadow: var(--glow);
+  flex: 0 0 auto;
+}
+.widget-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.widget-copy span {
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.widget-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 950;
+}
+.prayer-widget aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.prayer-widget aside strong {
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.14;
+  font-weight: 950;
+  white-space: nowrap;
+}
+.prayer-widget aside span {
+  color: var(--neon);
+  font-size: 15px;
+  line-height: 1.14;
+  font-weight: 950;
+  text-shadow: 0 0 18px rgba(40,247,191,0.55);
+  white-space: nowrap;
+}
+.widget-grip {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(237,253,246,0.42);
+  line-height: 0;
+}
+.widget-close {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-2);
+  padding: 0;
+}
+.widget-close:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.12);
 }

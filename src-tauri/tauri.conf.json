@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Prayer Times",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "co.tareq.prayertimes.windows",
   "build": {
     "frontendDist": "../dist",
@@ -12,12 +12,28 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Prayer Times",
         "width": 1020,
         "height": 760,
         "resizable": true,
         "center": true,
         "fullscreen": false
+      },
+      {
+        "label": "widget",
+        "title": "Prayer Widget",
+        "url": "index.html?widget=true",
+        "width": 320,
+        "height": 118,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "x": 32,
+        "y": 96
       }
     ],
     "security": {

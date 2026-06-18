@@ -218,6 +218,12 @@ porting work. Verify redistribution rights before publishing a public release.
 
 ## Release Notes
 
+### 0.1.5
+
+- Added floating Windows prayer widget with next prayer time and live countdown.
+- Added General settings toggle and tray menu control for the widget.
+- Added a second Tauri `widget` window with always-on-top frameless styling.
+
 ### 0.1.4
 
 - Clarified notification labels from `Notify` and `Remind` to `At time` and `Before`.

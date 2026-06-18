@@ -98,6 +98,7 @@ export interface AppSettings {
   menuBarCountdownMode: MenuBarCountdownMode;
   showIshraqTime: boolean;
   showHijriDate: boolean;
+  showPrayerWidget: boolean;
   hijriDayAdjustment: number;
   focusModeEnabled: boolean;
   focusDurationMinutes: number;

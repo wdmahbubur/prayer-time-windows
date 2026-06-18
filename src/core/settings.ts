@@ -45,6 +45,7 @@ export function defaultSettings(): AppSettings {
     menuBarCountdownMode: "nextPrayer",
     showIshraqTime: false,
     showHijriDate: true,
+    showPrayerWidget: true,
     hijriDayAdjustment: 0,
     focusModeEnabled: false,
     focusDurationMinutes: 15,

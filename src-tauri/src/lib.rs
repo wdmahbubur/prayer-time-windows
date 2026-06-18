@@ -18,6 +18,30 @@ fn hide_main(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn show_widget(app: AppHandle) -> Result<(), String> {
+  let window = app.get_webview_window("widget").ok_or("widget window not found")?;
+  window.show().map_err(|e| e.to_string())?;
+  window.set_always_on_top(true).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn hide_widget(app: AppHandle) -> Result<(), String> {
+  let window = app.get_webview_window("widget").ok_or("widget window not found")?;
+  window.hide().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_widget(app: AppHandle) -> Result<(), String> {
+  let window = app.get_webview_window("widget").ok_or("widget window not found")?;
+  if window.is_visible().map_err(|e| e.to_string())? {
+    window.hide().map_err(|e| e.to_string())
+  } else {
+    window.show().map_err(|e| e.to_string())?;
+    window.set_always_on_top(true).map_err(|e| e.to_string())
+  }
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) {
   app.exit(0);
 }
@@ -50,7 +74,7 @@ pub fn run() {
     ))
     .plugin(tauri_plugin_store::Builder::default().build())
     .plugin(tauri_plugin_shell::init())
-    .invoke_handler(tauri::generate_handler![show_main, hide_main, quit_app, start_focus_mode, end_focus_mode])
+    .invoke_handler(tauri::generate_handler![show_main, hide_main, show_widget, hide_widget, toggle_widget, quit_app, start_focus_mode, end_focus_mode])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -78,8 +102,9 @@ pub fn run() {
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
   let show = MenuItem::with_id(app, "show", "Show Prayer Times", true, None::<&str>)?;
   let hide = MenuItem::with_id(app, "hide", "Hide Window", true, None::<&str>)?;
+  let widget = MenuItem::with_id(app, "widget", "Show/Hide Widget", true, None::<&str>)?;
   let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-  let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
+  let menu = Menu::with_items(app, &[&show, &hide, &widget, &quit])?;
 
   TrayIconBuilder::with_id("main-tray")
     .tooltip("Prayer Times")
@@ -96,6 +121,16 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
       "hide" => {
         if let Some(window) = app.get_webview_window("main") {
           let _ = window.hide();
+        }
+      }
+      "widget" => {
+        if let Some(window) = app.get_webview_window("widget") {
+          if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+          } else {
+            let _ = window.show();
+            let _ = window.set_always_on_top(true);
+          }
         }
       }
       "quit" => app.exit(0),

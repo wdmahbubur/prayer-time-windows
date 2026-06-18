@@ -3,9 +3,11 @@ import {
   Bell,
   ChevronDown,
   EyeOff,
+  GripHorizontal,
   LocateFixed,
   MapPin,
   Moon,
+  Pin,
   PlayCircle,
   Power,
   Settings,
@@ -15,6 +17,7 @@ import {
   Sunrise,
   Sunset,
   Volume2,
+  X,
   Settings as SettingsIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -47,6 +50,7 @@ const prayerNames: Record<Prayer, string> = {
 };
 
 export function App() {
+  const isWidget = new URLSearchParams(window.location.search).get("widget") === "true";
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [storeReady, setStoreReady] = useState(false);
   const [tab, setTab] = useState<Tab>("calculation");
@@ -81,6 +85,11 @@ export function App() {
   useEffect(() => {
     void saveSettings(settings, storeReady);
   }, [settings, storeReady]);
+
+  useEffect(() => {
+    document.body.classList.toggle("widget-body", isWidget);
+    return () => document.body.classList.remove("widget-body");
+  }, [isWidget]);
 
   const updateSettings = (patch: Partial<AppSettings>) => setSettings((current) => ({ ...current, ...patch }));
 
@@ -135,6 +144,11 @@ export function App() {
   const trayLabel = clock.next ? `${prayerNames[clock.next.prayer]} in ${shortCountdown(secondsUntilNext)}` : "Prayer Times";
 
   useEffect(() => {
+    if (!storeReady || isWidget) return;
+    void setWidgetVisibility(settings.showPrayerWidget);
+  }, [isWidget, settings.showPrayerWidget, storeReady]);
+
+  useEffect(() => {
     void fireDueAlerts({
       now,
       today: clock.today,
@@ -148,6 +162,16 @@ export function App() {
       },
     });
   }, [now, clock.today, clock.tomorrow, settings, timeZone]);
+
+  if (isWidget) {
+    return (
+      <PrayerWidget
+        next={clock.next}
+        secondsUntilNext={secondsUntilNext}
+        timeZone={timeZone}
+      />
+    );
+  }
 
   return (
     <div className="desktop-shell">
@@ -309,16 +333,55 @@ function PrayerRow({
   );
 }
 
+function PrayerWidget({
+  next,
+  secondsUntilNext,
+  timeZone,
+}: {
+  next?: { prayer: Prayer; time: Date };
+  secondsUntilNext: number;
+  timeZone: string;
+}) {
+  const prayer = next?.prayer ?? "dhuhr";
+  const Icon = prayerIcons[prayer];
+  return (
+    <main className="prayer-widget" data-tauri-drag-region>
+      <div className="widget-grip" data-tauri-drag-region><GripHorizontal size={15} /></div>
+      <button className="widget-close" onClick={() => setWidgetVisibility(false)} title="Hide widget"><X size={14} /></button>
+      <section data-tauri-drag-region>
+        <div className="widget-icon" data-tauri-drag-region><Icon size={22} /></div>
+        <div className="widget-copy" data-tauri-drag-region>
+          <span data-tauri-drag-region>Next prayer</span>
+          <strong data-tauri-drag-region>{prayerNames[prayer]}</strong>
+        </div>
+      </section>
+      <aside data-tauri-drag-region>
+        <strong data-tauri-drag-region>{next ? formatClock(next.time, timeZone) : "--:--"}</strong>
+        <span data-tauri-drag-region>{next ? longCountdown(secondsUntilNext) : "Waiting"}</span>
+      </aside>
+    </main>
+  );
+}
+
 function GeneralTab({ settings, update }: SettingsTabProps) {
   const toggleLaunchAtLogin = async () => {
     const next = !settings.launchAtLogin;
     update({ launchAtLogin: next });
     await setLaunchAtLogin(next);
   };
+  const togglePrayerWidget = async () => {
+    const next = !settings.showPrayerWidget;
+    update({ showPrayerWidget: next });
+    await setWidgetVisibility(next);
+  };
 
   return (
     <>
       <Section title="Startup"><SettingRow label="Launch at login" control={<Switch on={settings.launchAtLogin} onClick={toggleLaunchAtLogin} />} /></Section>
+      <Section title="Desktop widget">
+        <SettingRow label="Show floating widget" subLabel="Always-on-top next prayer time and countdown." control={<Switch on={settings.showPrayerWidget} onClick={togglePrayerWidget} />} />
+        <SettingRow label="Widget controls" subLabel="Drag the widget from its body. Use the X button to hide it." control={<button className="small-button" onClick={() => setWidgetVisibility(true)}><Pin size={15} /> Show now</button>} />
+      </Section>
       <Section title="Menu bar">
         <SettingRow label="Label style" control={<NativeSelect value={settings.menuBarStyle} onChange={(menuBarStyle) => update({ menuBarStyle })} options={[
           ["iconOnly", "Icon only"],
@@ -806,6 +869,15 @@ async function endNativeFocusMode() {
     await invoke("end_focus_mode");
   } catch {
     // Browser preview uses the in-page overlay only.
+  }
+}
+
+async function setWidgetVisibility(visible: boolean) {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke(visible ? "show_widget" : "hide_widget");
+  } catch {
+    // Browser preview and tests do not have a native widget window.
   }
 }
 
