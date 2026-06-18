@@ -89,6 +89,41 @@ shell or initialize the build environment first:
 cmd /c "call ""C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"" && npm run tauri:build"
 ```
 
+## Code Signing and SmartScreen
+
+Windows SmartScreen warnings are controlled by Microsoft Defender reputation and
+Authenticode signing, not by installer artwork or UI design. To avoid warnings for
+most users, publish installers signed with a trusted code-signing certificate.
+
+Best production path:
+
+1. Buy/use a trusted Windows code-signing certificate.
+2. Prefer EV code signing or Azure Trusted Signing for fastest SmartScreen trust.
+3. Sign every `.msi` and `.exe` release asset.
+4. Timestamp signatures so they remain valid after the certificate expires.
+5. Keep the same publisher identity across releases so reputation can accumulate.
+
+Tauri's Windows signing guide explains the supported signing paths:
+<https://v2.tauri.app/distribute/sign/windows/>
+
+Microsoft's SmartScreen documentation explains that unknown files or publishers
+may still show warnings until reputation is established:
+<https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation>
+
+### Local Signing
+
+Import a trusted code-signing certificate into `Cert:\CurrentUser\My`, then set
+its SHA-1 thumbprint:
+
+```powershell
+$env:WINDOWS_CERT_THUMBPRINT = "YOUR_CERTIFICATE_THUMBPRINT"
+$env:WINDOWS_TIMESTAMP_URL = "http://timestamp.digicert.com"
+.\scripts\sign-windows.ps1
+```
+
+The script signs and verifies the generated MSI and setup EXE under the Tauri
+bundle output directory.
+
 ## Installer Output
 
 After a successful Tauri build, installers are written under:
@@ -188,6 +223,7 @@ porting work. Verify redistribution rights before publishing a public release.
 - Clarified notification labels from `Notify` and `Remind` to `At time` and `Before`.
 - Fixed per-prayer before-reminder toggles for Fajr, Sunrise, Asr, and Isha.
 - Built Windows MSI and NSIS installers.
+- Added Windows signing documentation and a local installer signing script.
 
 ### 0.1.3
 

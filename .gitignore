@@ -3,6 +3,12 @@ dist/
 vite-dev.log
 *.local
 prayer-times-macos/
+certificate/
+*.pfx
+*.p12
+*.cer
+*.key
+*.pem
 
 # Tauri/Rust outputs once the desktop shell is added.
 src-tauri/target/
