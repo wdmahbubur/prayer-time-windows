@@ -76,8 +76,15 @@ export function App() {
       setNow(new Date());
       timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
     };
+    const refreshAfterVisibilityChange = () => {
+      setNow(new Date());
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
+    };
+    document.addEventListener("visibilitychange", refreshAfterVisibilityChange);
     timer = window.setTimeout(refresh, nextClockRefreshDelay(isWidget));
     return () => {
+      document.removeEventListener("visibilitychange", refreshAfterVisibilityChange);
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [isWidget]);
@@ -816,7 +823,7 @@ function Onboarding({ settings, update }: SettingsTabProps) {
 }
 
 function nextClockRefreshDelay(isWidget: boolean): number {
-  const interval = isWidget ? 1_000 : 60_000;
+  const interval = isWidget || document.visibilityState === "visible" ? 1_000 : 60_000;
   const now = Date.now();
   return interval - (now % interval) + 25;
 }
