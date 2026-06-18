@@ -716,7 +716,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 .prayer-widget {
   width: min(100vw, 320px);
-  height: min(100vh, 118px);
+  min-height: min(100vh, 126px);
   position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
@@ -793,6 +793,17 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   line-height: 1.14;
   font-weight: 950;
   text-shadow: 0 0 18px rgba(40,247,191,0.55);
+  white-space: nowrap;
+}
+.prayer-widget aside em {
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.12;
   white-space: nowrap;
 }
 .widget-grip {

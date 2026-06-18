@@ -143,6 +143,7 @@ export function App() {
 
   const secondsUntilNext = clock.next ? Math.max(0, (clock.next.time.getTime() - now.getTime()) / 1000) : 0;
   const trayLabel = clock.next ? `${prayerNames[clock.next.prayer]} in ${shortCountdown(secondsUntilNext)}` : "Prayer Times";
+  const hijriDate = settings.showHijriDate ? formatHijriDate(now, settings.hijriDayAdjustment, timeZone) : undefined;
 
   useEffect(() => {
     if (!storeReady || isWidget) return;
@@ -190,6 +191,7 @@ export function App() {
         next={clock.next}
         secondsUntilNext={secondsUntilNext}
         timeZone={timeZone}
+        hijriDate={hijriDate}
       />
     );
   }
@@ -238,6 +240,7 @@ export function App() {
             timeZone={timeZone}
             methodName={method.displayName}
             coordinates={coordinates}
+            hijriDate={hijriDate}
             next={clock.next}
             secondsUntilNext={secondsUntilNext}
             today={clock.today}
@@ -259,6 +262,7 @@ function PrayerPanel({
   timeZone,
   methodName,
   coordinates,
+  hijriDate,
   next,
   secondsUntilNext,
   today,
@@ -271,6 +275,7 @@ function PrayerPanel({
   timeZone: string;
   methodName: string;
   coordinates: Coordinates;
+  hijriDate?: string;
   next?: { prayer: Prayer; time: Date };
   secondsUntilNext: number;
   today: ReturnType<typeof calculateTodayAndTomorrow>["today"];
@@ -289,7 +294,7 @@ function PrayerPanel({
           <MapPin size={14} />
           <span>{coordinates.latitude.toFixed(4)}, {coordinates.longitude.toFixed(4)}</span>
         </div>
-        <div className="hijri">Hijri date preview will follow selected locale</div>
+        {hijriDate && <div className="hijri">{hijriDate}</div>}
         {next && (
           <div className="next-block">
             <div>
@@ -358,10 +363,12 @@ function PrayerWidget({
   next,
   secondsUntilNext,
   timeZone,
+  hijriDate,
 }: {
   next?: { prayer: Prayer; time: Date };
   secondsUntilNext: number;
   timeZone: string;
+  hijriDate?: string;
 }) {
   const prayer = next?.prayer ?? "dhuhr";
   const Icon = prayerIcons[prayer];
@@ -380,6 +387,7 @@ function PrayerWidget({
       <aside>
         <strong>{next ? formatClock(next.time, timeZone) : "--:--"}</strong>
         <span>{next ? longCountdown(secondsUntilNext) : "Waiting"}</span>
+        {hijriDate && <em>{hijriDate}</em>}
       </aside>
     </main>
   );
@@ -416,6 +424,7 @@ function GeneralTab({ settings, update }: SettingsTabProps) {
       <Section title="Panel">
         <SettingRow label="Show Ishraq time" control={<Switch on={settings.showIshraqTime} onClick={() => update({ showIshraqTime: !settings.showIshraqTime })} />} />
         <SettingRow label="Show Hijri date" control={<Switch on={settings.showHijriDate} onClick={() => update({ showHijriDate: !settings.showHijriDate })} />} />
+        <SettingRow label="Hijri adjustment" subLabel="Use this if your local moon sighting differs by a day." control={<NumberInput value={settings.hijriDayAdjustment} onChange={(hijriDayAdjustment) => update({ hijriDayAdjustment })} />} />
       </Section>
       <Section title="Language"><SettingRow label="Language" control={<NativeSelect value={settings.languageOverride ?? "system"} onChange={(code) => update({ languageOverride: code === "system" ? undefined : code })} options={[["system", "Follow system"], ["en", "English"], ["ar", "Arabic"], ["tr", "Turkish"], ["bn", "Bengali"]]} />} /></Section>
     </>
@@ -692,6 +701,30 @@ function timeToMinutes(value: string): number | null {
   const minute = Number(match[2]);
   if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour > 23 || minute > 59) return null;
   return hour * 60 + minute;
+}
+
+function formatHijriDate(date: Date, dayAdjustment: number, timeZone: string): string {
+  const adjusted = new Date(date.getTime() + Math.round(dayAdjustment) * 86_400_000);
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      calendar: "islamic-umalqura",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone,
+    }).format(adjusted);
+  } catch {
+    try {
+      return new Intl.DateTimeFormat("en-u-ca-islamic", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone,
+      }).format(adjusted);
+    } catch {
+      return "";
+    }
+  }
 }
 
 function formatDuration(totalSeconds: number): string {
