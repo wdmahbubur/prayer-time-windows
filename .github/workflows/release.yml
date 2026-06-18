@@ -18,14 +18,14 @@ jobs:
     name: Build and publish Windows release
     runs-on: windows-latest
     env:
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
       CARGO_TARGET_DIR: ${{ runner.temp }}\cargo-target
 
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
           fetch-depth: 0
 
       - name: Setup Node.js
