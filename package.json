@@ -2,6 +2,7 @@
   "name": "prayer-time-windows",
   "version": "0.1.8",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",

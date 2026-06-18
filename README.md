@@ -254,7 +254,7 @@ Audio assets were copied from the referenced macOS project resources during the 
 
 ## License
 
-No license file has been added yet. Add a `LICENSE` file before encouraging public reuse or redistribution.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ---
 
