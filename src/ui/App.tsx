@@ -344,20 +344,21 @@ function PrayerWidget({
 }) {
   const prayer = next?.prayer ?? "dhuhr";
   const Icon = prayerIcons[prayer];
+  const startDrag = () => void startWidgetDrag();
   return (
-    <main className="prayer-widget" data-tauri-drag-region>
-      <div className="widget-grip" data-tauri-drag-region><GripHorizontal size={15} /></div>
-      <button className="widget-close" onClick={() => setWidgetVisibility(false)} title="Hide widget"><X size={14} /></button>
-      <section data-tauri-drag-region>
-        <div className="widget-icon" data-tauri-drag-region><Icon size={22} /></div>
-        <div className="widget-copy" data-tauri-drag-region>
-          <span data-tauri-drag-region>Next prayer</span>
-          <strong data-tauri-drag-region>{prayerNames[prayer]}</strong>
+    <main className="prayer-widget" onPointerDown={startDrag}>
+      <div className="widget-grip"><GripHorizontal size={15} /></div>
+      <button className="widget-close" onPointerDown={(event) => event.stopPropagation()} onClick={() => setWidgetVisibility(false)} title="Hide widget"><X size={14} /></button>
+      <section>
+        <div className="widget-icon"><Icon size={22} /></div>
+        <div className="widget-copy">
+          <span>Next prayer</span>
+          <strong>{prayerNames[prayer]}</strong>
         </div>
       </section>
-      <aside data-tauri-drag-region>
-        <strong data-tauri-drag-region>{next ? formatClock(next.time, timeZone) : "--:--"}</strong>
-        <span data-tauri-drag-region>{next ? longCountdown(secondsUntilNext) : "Waiting"}</span>
+      <aside>
+        <strong>{next ? formatClock(next.time, timeZone) : "--:--"}</strong>
+        <span>{next ? longCountdown(secondsUntilNext) : "Waiting"}</span>
       </aside>
     </main>
   );
@@ -878,6 +879,15 @@ async function setWidgetVisibility(visible: boolean) {
     await invoke(visible ? "show_widget" : "hide_widget");
   } catch {
     // Browser preview and tests do not have a native widget window.
+  }
+}
+
+async function startWidgetDrag() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().startDragging();
+  } catch {
+    // Browser preview cannot drag native windows.
   }
 }
 

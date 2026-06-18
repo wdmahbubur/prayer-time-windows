@@ -218,6 +218,11 @@ porting work. Verify redistribution rights before publishing a public release.
 
 ## Release Notes
 
+### 0.1.6
+
+- Fixed floating widget dragging with Tauri native window drag support.
+- Changed widget behavior so it is not always-on-top and can stay as a desktop-level widget.
+
 ### 0.1.5
 
 - Added floating Windows prayer widget with next prayer time and live countdown.

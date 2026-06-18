@@ -20,8 +20,8 @@ fn hide_main(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn show_widget(app: AppHandle) -> Result<(), String> {
   let window = app.get_webview_window("widget").ok_or("widget window not found")?;
-  window.show().map_err(|e| e.to_string())?;
-  window.set_always_on_top(true).map_err(|e| e.to_string())
+  window.set_always_on_top(false).map_err(|e| e.to_string())?;
+  window.show().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -36,8 +36,8 @@ fn toggle_widget(app: AppHandle) -> Result<(), String> {
   if window.is_visible().map_err(|e| e.to_string())? {
     window.hide().map_err(|e| e.to_string())
   } else {
-    window.show().map_err(|e| e.to_string())?;
-    window.set_always_on_top(true).map_err(|e| e.to_string())
+    window.set_always_on_top(false).map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())
   }
 }
 
@@ -128,8 +128,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
           if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
           } else {
+            let _ = window.set_always_on_top(false);
             let _ = window.show();
-            let _ = window.set_always_on_top(true);
           }
         }
       }
