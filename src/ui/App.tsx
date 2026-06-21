@@ -21,15 +21,28 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { MWLAdapter, builtInMethods, resolveMethod } from "../core/adapters";
+import { MWLAdapter, builtInMethods, methodIdForCountryCode, resolveMethod } from "../core/adapters";
+import { buildTrayLabel, formatHijriDateLocalized, prayerLabel, resolveLanguage, t, textDirection, type SupportedLanguage } from "../core/localization";
 import { calculateTodayAndTomorrow } from "../core/engine";
 import { civilDateFromDate, formatClock, zonedMidnight } from "../core/timeZone";
-import { ishraq, longCountdown, nextPrayer, orderedTimes, shortCountdown } from "../core/prayerTimes";
+import { currentPrayer, ishraq, longCountdown, nextPrayer, orderedTimes, shortCountdown } from "../core/prayerTimes";
 import { defaultJamaatTimes, defaultPrayerNotification, defaultSettings, resolvedNotification } from "../core/settings";
+import { inferCountryCode } from "../core/systemDetection";
 import { isObligatory } from "../core/types";
 import type { AppSettings, CalculationMethodAdapter, Coordinates, NotificationSound, Prayer, PrayerNotificationConfig, PrayerTimes } from "../core/types";
 
 type Tab = "general" | "location" | "calculation" | "notifications" | "focus";
+type RuntimeScheduledEvent = {
+  id: string;
+  prayer?: Prayer;
+  atMs: number;
+  title: string;
+  body: string;
+  playSound: boolean;
+  sound?: NotificationSound;
+  playFullAdhan: boolean;
+  startFocus: boolean;
+};
 
 const prayerIcons: Record<Prayer, typeof Sunrise> = {
   fajr: Sunrise,
@@ -57,6 +70,9 @@ export function App() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [focusPreview, setFocusPreview] = useState(false);
   const [focusPrayer, setFocusPrayer] = useState<Prayer>("dhuhr");
+  const [nativeSchedulerAvailable, setNativeSchedulerAvailable] = useState(true);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string | undefined>();
   const [now, setNow] = useState(() => new Date());
   const [audioPlaying, setAudioPlaying] = useState(false);
   const firedAlerts = useRef(new Set<string>());
@@ -64,9 +80,12 @@ export function App() {
   const timeZone = settings.timeZoneMode.kind === "explicit"
     ? settings.timeZoneMode.identifier
     : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const language = resolveLanguage(settings.languageOverride);
+  const detectedCountryCode = inferCountryCode(timeZone);
+  const resolvedMethodId = settings.autoDetectMethod ? methodIdForCountryCode(detectedCountryCode) : settings.methodId;
   const method = useMemo(
-    () => resolveMethod(settings.methodId, settings.hanafiAsr, settings.manualParameters) ?? MWLAdapter,
-    [settings.hanafiAsr, settings.manualParameters, settings.methodId],
+    () => resolveMethod(resolvedMethodId, settings.hanafiAsr, settings.manualParameters) ?? MWLAdapter,
+    [resolvedMethodId, settings.hanafiAsr, settings.manualParameters],
   );
   const coordinates = settings.manualCoordinates;
 
@@ -105,8 +124,10 @@ export function App() {
 
   useEffect(() => {
     document.body.classList.toggle("widget-body", isWidget);
+    document.body.dir = textDirection(language);
+    document.documentElement.lang = language;
     return () => document.body.classList.remove("widget-body");
-  }, [isWidget]);
+  }, [isWidget, language]);
 
   const updateSettings = (patch: Partial<AppSettings>) => setSettings((current) => ({ ...current, ...patch }));
 
@@ -132,6 +153,32 @@ export function App() {
     setAudioPlaying(false);
   };
 
+  const checkForAppUpdate = async (manual = false) => {
+    if (updateBusy) return;
+    setUpdateBusy(true);
+    if (manual) setUpdateStatus("Checking for updates...");
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (!update) {
+        setUpdateStatus(manual ? "You already have the latest version." : undefined);
+        return;
+      }
+      const approved = window.confirm(`Version ${update.version} is available. Download and install it now?`);
+      if (!approved) {
+        setUpdateStatus(`Update ${update.version} is available.`);
+        return;
+      }
+      setUpdateStatus(`Downloading ${update.version}...`);
+      await update.downloadAndInstall();
+      setUpdateStatus(`Update ${update.version} installed. Restart the app if it does not relaunch automatically.`);
+    } catch {
+      setUpdateStatus(manual ? "Unable to check for updates right now." : undefined);
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
   const beginFocusMode = async (prayer: Prayer = clock.next?.prayer ?? "dhuhr") => {
     setFocusPrayer(prayer);
     await startNativeFocusMode();
@@ -147,10 +194,26 @@ export function App() {
     () => buildPrayerClock(now, settings, method, coordinates, timeZone),
     [coordinates, method, now, settings, timeZone],
   );
+  const runtimeSchedule = useMemo(
+    () => buildRuntimeSchedule(clock.today, clock.tomorrow, settings, timeZone, language),
+    [clock.today.date.getTime(), clock.tomorrow.date.getTime(), language, settings, timeZone],
+  );
 
   const secondsUntilNext = clock.next ? Math.max(0, (clock.next.time.getTime() - now.getTime()) / 1000) : 0;
-  const trayLabel = clock.next ? `${prayerNames[clock.next.prayer]} in ${shortCountdown(secondsUntilNext)}` : "Prayer Times";
-  const hijriDate = settings.showHijriDate ? formatHijriDate(now, settings.hijriDayAdjustment, timeZone) : undefined;
+  const activePrayer = settings.menuBarCountdownMode === "currentWaqt"
+    ? currentPrayer(clock.today, now)?.prayer ?? clock.next?.prayer
+    : clock.next?.prayer;
+  const currentPrayerTimeLabel = clock.next ? formatClock(clock.next.time, timeZone, language) : "--:--";
+  const trayLabel = buildTrayLabel(
+    language,
+    settings.menuBarStyle,
+    settings.menuBarCountdownMode,
+    activePrayer,
+    secondsUntilNext,
+    currentPrayerTimeLabel,
+    shortCountdown(secondsUntilNext),
+  );
+  const hijriDate = settings.showHijriDate ? formatHijriDateLocalized(now, settings.hijriDayAdjustment, timeZone, language) : undefined;
 
   useEffect(() => {
     if (!storeReady || isWidget) return;
@@ -158,7 +221,62 @@ export function App() {
   }, [isWidget, settings.showPrayerWidget, storeReady]);
 
   useEffect(() => {
+    if (!storeReady || isWidget || !settings.autoUpdateEnabled) return;
+    const id = window.setTimeout(() => void checkForAppUpdate(false), 4_000);
+    return () => window.clearTimeout(id);
+  }, [isWidget, settings.autoUpdateEnabled, storeReady]);
+
+  useEffect(() => {
     if (isWidget) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    const attach = async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen<RuntimeScheduledEvent>("prayer-runtime-event", async (event) => {
+          const payload = event.payload;
+          if (payload.playSound && payload.sound) {
+            await playNotificationSound(payload.sound, payload.playFullAdhan);
+          }
+          if (payload.startFocus && payload.prayer) {
+            await beginFocusMode(payload.prayer);
+          }
+        });
+      } catch {
+        if (!cancelled) setNativeSchedulerAvailable(false);
+      }
+    };
+
+    void attach();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [isWidget]);
+
+  useEffect(() => {
+    if (!storeReady || isWidget) return;
+    let cancelled = false;
+
+    const syncSchedule = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("sync_runtime_schedule_command", { payload: { events: runtimeSchedule } });
+        if (!cancelled) setNativeSchedulerAvailable(true);
+      } catch {
+        if (!cancelled) setNativeSchedulerAvailable(false);
+      }
+    };
+
+    void syncSchedule();
+    return () => {
+      cancelled = true;
+    };
+  }, [isWidget, runtimeSchedule, storeReady]);
+
+  useEffect(() => {
+    if (isWidget || nativeSchedulerAvailable) return;
     let cancelled = false;
     let timer: number | undefined;
 
@@ -190,7 +308,7 @@ export function App() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [coordinates, isWidget, method, settings, timeZone]);
+  }, [coordinates, isWidget, method, nativeSchedulerAvailable, settings, timeZone]);
 
   if (isWidget) {
     return (
@@ -199,6 +317,7 @@ export function App() {
         secondsUntilNext={secondsUntilNext}
         timeZone={timeZone}
         hijriDate={hijriDate}
+        language={language}
       />
     );
   }
@@ -208,42 +327,43 @@ export function App() {
       <div className="taskbar">
         <div className="taskbar-left">
           <span className="win-dot" />
-          <span>Prayer Times for Windows</span>
+          <span>{t(language, "appTitle")}</span>
         </div>
         <button className={`tray-pill ${panelOpen ? "active" : ""}`} onClick={() => setPanelOpen((open) => !open)}>
           <Moon size={16} />
           <span>{trayLabel}</span>
         </button>
         <div className="taskbar-clock">
-          <span>{formatClock(now, timeZone)}</span>
-          <span>{new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(now)}</span>
+          <span>{formatClock(now, timeZone, language)}</span>
+          <span>{new Intl.DateTimeFormat(language, { weekday: "short", month: "short", day: "numeric" }).format(now)}</span>
         </div>
       </div>
 
       <main className="workspace">
         <section className="settings-window">
           <header className="window-titlebar">
-            <span className="window-title">{tabTitle(tab)}</span>
+            <span className="window-title">{tabTitle(tab, language)}</span>
           </header>
           <nav className="tabbar">
-            <TabButton tab="general" active={tab} setTab={setTab} icon={SettingsIcon} label="General" />
-            <TabButton tab="location" active={tab} setTab={setTab} icon={LocateFixed} label="Location & Time" />
-            <TabButton tab="calculation" active={tab} setTab={setTab} icon={Moon} label="Calculation" />
-            <TabButton tab="notifications" active={tab} setTab={setTab} icon={Bell} label="Notifications" />
-            <TabButton tab="focus" active={tab} setTab={setTab} icon={EyeOff} label="Focus Mode" />
+            <TabButton tab="general" active={tab} setTab={setTab} icon={SettingsIcon} label={t(language, "general")} />
+            <TabButton tab="location" active={tab} setTab={setTab} icon={LocateFixed} label={t(language, "locationTime")} />
+            <TabButton tab="calculation" active={tab} setTab={setTab} icon={Moon} label={t(language, "calculation")} />
+            <TabButton tab="notifications" active={tab} setTab={setTab} icon={Bell} label={t(language, "notifications")} />
+            <TabButton tab="focus" active={tab} setTab={setTab} icon={EyeOff} label={t(language, "focusMode")} />
           </nav>
           <div className="settings-content">
-            {tab === "general" && <GeneralTab settings={settings} update={updateSettings} />}
-            {tab === "location" && <LocationTab settings={settings} update={updateSettings} coordinates={coordinates} timeZone={timeZone} />}
-            {tab === "calculation" && <CalculationTab settings={settings} update={updateSettings} />}
-            {tab === "notifications" && <NotificationsTab settings={settings} update={updateSettings} />}
-            {tab === "focus" && <FocusTab settings={settings} update={updateSettings} onPreview={() => beginFocusMode(clock.next?.prayer)} />}
+            {tab === "general" && <GeneralTab settings={settings} update={updateSettings} language={language} onCheckUpdates={() => void checkForAppUpdate(true)} updateBusy={updateBusy} updateStatus={updateStatus} />}
+            {tab === "location" && <LocationTab settings={settings} update={updateSettings} coordinates={coordinates} timeZone={timeZone} language={language} detectedCountryCode={detectedCountryCode} />}
+            {tab === "calculation" && <CalculationTab settings={settings} update={updateSettings} language={language} detectedCountryCode={detectedCountryCode} resolvedMethodId={resolvedMethodId} />}
+            {tab === "notifications" && <NotificationsTab settings={settings} update={updateSettings} language={language} />}
+            {tab === "focus" && <FocusTab settings={settings} update={updateSettings} language={language} onPreview={() => beginFocusMode(clock.next?.prayer)} />}
           </div>
         </section>
 
         {panelOpen && (
           <PrayerPanel
             now={now}
+            language={language}
             timeZone={timeZone}
             methodName={method.displayName}
             coordinates={coordinates}
@@ -258,14 +378,15 @@ export function App() {
           />
         )}
       </main>
-      {!settings.didCompleteOnboarding && <Onboarding settings={settings} update={updateSettings} />}
-      {focusPreview && <FocusPreview settings={settings} prayer={focusPrayer} onDone={endFocusMode} />}
+      {!settings.didCompleteOnboarding && <Onboarding settings={settings} update={updateSettings} language={language} />}
+      {focusPreview && <FocusPreview settings={settings} prayer={focusPrayer} onDone={endFocusMode} language={language} />}
     </div>
   );
 }
 
 function PrayerPanel({
   now,
+  language,
   timeZone,
   methodName,
   coordinates,
@@ -279,6 +400,7 @@ function PrayerPanel({
   onStopAudio,
 }: {
   now: Date;
+  language: SupportedLanguage;
   timeZone: string;
   methodName: string;
   coordinates: Coordinates;
@@ -305,8 +427,8 @@ function PrayerPanel({
         {next && (
           <div className="next-block">
             <div>
-              <span className="eyebrow">Next · {prayerNames[next.prayer]}</span>
-              <strong>{formatClock(next.time, timeZone)}</strong>
+              <span className="eyebrow">{t(language, "next")} · {prayerLabel(language, next.prayer)}</span>
+              <strong>{formatClock(next.time, timeZone, language)}</strong>
             </div>
             <span className="countdown">{longCountdown(secondsUntilNext)}</span>
           </div>
@@ -316,18 +438,18 @@ function PrayerPanel({
 
       <div className="panel-list">
         {rows.map((entry) => (
-          <PrayerRow key={entry.prayer} entry={entry} now={now} next={next} timeZone={timeZone} />
+          <PrayerRow key={entry.prayer} entry={entry} now={now} next={next} timeZone={timeZone} language={language} />
         ))}
         {ishraqTime && (
-          <PrayerRow entry={{ prayer: "sunrise", time: ishraqTime }} now={now} next={next} timeZone={timeZone} label="Ishraq" minor />
+          <PrayerRow entry={{ prayer: "sunrise", time: ishraqTime }} now={now} next={next} timeZone={timeZone} language={language} label="Ishraq" minor />
         )}
       </div>
 
       <footer className="panel-footer">
-        <button onClick={onFocusNow}><EyeOff size={15} /> Focus now</button>
-        {audioPlaying && <button onClick={onStopAudio}><Volume2 size={15} /> Stop</button>}
-        <button className="accent"><Settings size={15} /> Settings</button>
-        <button onClick={quitDesktop}><Power size={15} /> Quit</button>
+        <button onClick={onFocusNow}><EyeOff size={15} /> {t(language, "focusNow")}</button>
+        {audioPlaying && <button onClick={onStopAudio}><Volume2 size={15} /> {t(language, "stop")}</button>}
+        <button className="accent"><Settings size={15} /> {t(language, "settings")}</button>
+        <button onClick={quitDesktop}><Power size={15} /> {t(language, "quit")}</button>
       </footer>
 
       <div className="panel-summary">
@@ -343,6 +465,7 @@ function PrayerRow({
   now,
   next,
   timeZone,
+  language,
   label,
   minor = false,
 }: {
@@ -350,6 +473,7 @@ function PrayerRow({
   now: Date;
   next?: { prayer: Prayer; time: Date };
   timeZone: string;
+  language: SupportedLanguage;
   label?: string;
   minor?: boolean;
 }) {
@@ -359,9 +483,9 @@ function PrayerRow({
   return (
     <div className={`prayer-row ${isNext ? "next" : ""} ${isPast ? "past" : ""} ${minor ? "minor" : ""}`}>
       <Icon size={17} />
-      <span>{label ?? prayerNames[entry.prayer]}</span>
+      <span>{label ?? prayerLabel(language, entry.prayer)}</span>
       {isNext && <em>{shortCountdown((entry.time.getTime() - now.getTime()) / 1000)}</em>}
-      <strong>{formatClock(entry.time, timeZone)}</strong>
+      <strong>{formatClock(entry.time, timeZone, language)}</strong>
     </div>
   );
 }
@@ -371,11 +495,13 @@ function PrayerWidget({
   secondsUntilNext,
   timeZone,
   hijriDate,
+  language,
 }: {
   next?: { prayer: Prayer; time: Date };
   secondsUntilNext: number;
   timeZone: string;
   hijriDate?: string;
+  language: SupportedLanguage;
 }) {
   const prayer = next?.prayer ?? "dhuhr";
   const Icon = prayerIcons[prayer];
@@ -383,24 +509,31 @@ function PrayerWidget({
   return (
     <main className="prayer-widget" onPointerDown={startDrag}>
       <div className="widget-grip"><GripHorizontal size={15} /></div>
-      <button className="widget-close" onPointerDown={(event) => event.stopPropagation()} onClick={() => setWidgetVisibility(false)} title="Hide widget"><X size={14} /></button>
+      <button className="widget-close" onPointerDown={(event) => event.stopPropagation()} onClick={() => setWidgetVisibility(false)} title={t(language, "desktopWidget")}><X size={14} /></button>
       <section>
         <div className="widget-icon"><Icon size={22} /></div>
         <div className="widget-copy">
-          <span>Next prayer</span>
-          <strong>{prayerNames[prayer]}</strong>
+          <span>{t(language, "nextPrayer")}</span>
+          <strong>{prayerLabel(language, prayer)}</strong>
         </div>
       </section>
       <aside>
-        <strong>{next ? formatClock(next.time, timeZone) : "--:--"}</strong>
-        <span>{next ? longCountdown(secondsUntilNext) : "Waiting"}</span>
+        <strong>{next ? formatClock(next.time, timeZone, language) : "--:--"}</strong>
+        <span>{next ? longCountdown(secondsUntilNext) : t(language, "waiting")}</span>
         {hijriDate && <em>{hijriDate}</em>}
       </aside>
     </main>
   );
 }
 
-function GeneralTab({ settings, update }: SettingsTabProps) {
+function GeneralTab({
+  settings,
+  update,
+  language,
+  onCheckUpdates,
+  updateBusy,
+  updateStatus,
+}: SettingsTabProps & { language: SupportedLanguage; onCheckUpdates: () => void; updateBusy: boolean; updateStatus?: string }) {
   const toggleLaunchAtLogin = async () => {
     const next = !settings.launchAtLogin;
     update({ launchAtLogin: next });
@@ -414,31 +547,38 @@ function GeneralTab({ settings, update }: SettingsTabProps) {
 
   return (
     <>
-      <Section title="Startup"><SettingRow label="Launch at login" control={<Switch on={settings.launchAtLogin} onClick={toggleLaunchAtLogin} />} /></Section>
-      <Section title="Desktop widget">
-        <SettingRow label="Show floating widget" subLabel="Desktop widget with next prayer time and countdown." control={<Switch on={settings.showPrayerWidget} onClick={togglePrayerWidget} />} />
-        <SettingRow label="Widget controls" subLabel="Drag the widget from its body. Use the X button to hide it." control={<button className="small-button" onClick={() => setWidgetVisibility(true)}><Pin size={15} /> Show now</button>} />
+      <Section title={t(language, "startup")}><SettingRow label={t(language, "launchAtLogin")} control={<Switch on={settings.launchAtLogin} onClick={toggleLaunchAtLogin} />} /></Section>
+      <Section title={t(language, "desktopWidget")}>
+        <SettingRow label={t(language, "showFloatingWidget")} subLabel={t(language, "widgetDescription")} control={<Switch on={settings.showPrayerWidget} onClick={togglePrayerWidget} />} />
+        <SettingRow label={t(language, "widgetControls")} subLabel={t(language, "widgetControlsHelp")} control={<button className="small-button" onClick={() => setWidgetVisibility(true)}><Pin size={15} /> {t(language, "showNow")}</button>} />
       </Section>
-      <Section title="Menu bar">
-        <SettingRow label="Label style" control={<NativeSelect value={settings.menuBarStyle} onChange={(menuBarStyle) => update({ menuBarStyle })} options={[
-          ["iconOnly", "Icon only"],
-          ["iconCountdown", "Icon + countdown"],
-          ["iconNameCountdown", "Icon + name + countdown"],
-          ["nextPrayerClock", "Name + time"],
+      <Section title={t(language, "menuBar")}>
+        <SettingRow label={t(language, "labelStyle")} control={<NativeSelect value={settings.menuBarStyle} onChange={(menuBarStyle) => update({ menuBarStyle })} options={[
+          ["iconOnly", t(language, "iconOnly")],
+          ["countdownOnly", t(language, "countdownOnly")],
+          ["iconCountdown", t(language, "iconCountdown")],
+          ["nextPrayerCountdown", t(language, "nextPrayerCountdown")],
+          ["iconNameCountdown", t(language, "iconNameCountdown")],
+          ["nextPrayerClock", t(language, "nextPrayerClock")],
+          ["iconNameClock", t(language, "iconNameClock")],
         ]} />} />
-        <SettingRow label="Countdown shows" control={<NativeSelect value={settings.menuBarCountdownMode} onChange={(menuBarCountdownMode) => update({ menuBarCountdownMode })} options={[["nextPrayer", "Next prayer"], ["currentWaqt", "Current waqt"]]} />} />
+        <SettingRow label={t(language, "countdownShows")} control={<NativeSelect value={settings.menuBarCountdownMode} onChange={(menuBarCountdownMode) => update({ menuBarCountdownMode })} options={[["nextPrayer", t(language, "nextPrayer")], ["currentWaqt", t(language, "currentWaqt")]]} />} />
       </Section>
-      <Section title="Panel">
-        <SettingRow label="Show Ishraq time" control={<Switch on={settings.showIshraqTime} onClick={() => update({ showIshraqTime: !settings.showIshraqTime })} />} />
-        <SettingRow label="Show Hijri date" control={<Switch on={settings.showHijriDate} onClick={() => update({ showHijriDate: !settings.showHijriDate })} />} />
-        <SettingRow label="Hijri adjustment" subLabel="Use this if your local moon sighting differs by a day." control={<NumberInput value={settings.hijriDayAdjustment} onChange={(hijriDayAdjustment) => update({ hijriDayAdjustment })} />} />
+      <Section title={t(language, "panel")}>
+        <SettingRow label={t(language, "showIshraqTime")} control={<Switch on={settings.showIshraqTime} onClick={() => update({ showIshraqTime: !settings.showIshraqTime })} />} />
+        <SettingRow label={t(language, "showHijriDate")} control={<Switch on={settings.showHijriDate} onClick={() => update({ showHijriDate: !settings.showHijriDate })} />} />
+        <SettingRow label={t(language, "hijriAdjustment")} subLabel={t(language, "hijriAdjustmentHelp")} control={<NumberInput value={settings.hijriDayAdjustment} onChange={(hijriDayAdjustment) => update({ hijriDayAdjustment })} />} />
       </Section>
-      <Section title="Language"><SettingRow label="Language" control={<NativeSelect value={settings.languageOverride ?? "system"} onChange={(code) => update({ languageOverride: code === "system" ? undefined : code })} options={[["system", "Follow system"], ["en", "English"], ["ar", "Arabic"], ["tr", "Turkish"], ["bn", "Bengali"]]} />} /></Section>
+      <Section title={t(language, "language")}><SettingRow label={t(language, "language")} control={<NativeSelect value={settings.languageOverride ?? "system"} onChange={(code) => update({ languageOverride: code === "system" ? undefined : code })} options={[["system", t(language, "followSystem")], ["en", "English"], ["ar", "Arabic"], ["tr", "Turkish"], ["bn", "Bengali"]]} />} /></Section>
+      <Section title="Updates">
+        <SettingRow label="Check automatically" subLabel={updateStatus} control={<Switch on={settings.autoUpdateEnabled} onClick={() => update({ autoUpdateEnabled: !settings.autoUpdateEnabled })} />} />
+        <SettingRow label="Check now" control={<button className="small-button" onClick={onCheckUpdates} disabled={updateBusy}>{updateBusy ? "Checking..." : "Check for updates"}</button>} />
+      </Section>
     </>
   );
 }
 
-function LocationTab({ settings, update, coordinates, timeZone }: SettingsTabProps & { coordinates: { latitude: number; longitude: number; elevation?: number }; timeZone: string }) {
+function LocationTab({ settings, update, coordinates, timeZone, language, detectedCountryCode }: SettingsTabProps & { coordinates: { latitude: number; longitude: number; elevation?: number }; timeZone: string; language: SupportedLanguage; detectedCountryCode?: string }) {
   const [detecting, setDetecting] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const setCoordinate = (key: "latitude" | "longitude" | "elevation", value: number) => {
@@ -447,7 +587,7 @@ function LocationTab({ settings, update, coordinates, timeZone }: SettingsTabPro
   const detectLocation = async () => {
     setLocationError(null);
     if (!navigator.geolocation) {
-      setLocationError("Location is not available on this device.");
+      setLocationError(t(language, "locationUnavailable"));
       return;
     }
     setDetecting(true);
@@ -464,7 +604,7 @@ function LocationTab({ settings, update, coordinates, timeZone }: SettingsTabPro
         setDetecting(false);
       },
       (error) => {
-        setLocationError(error.message || "Could not detect your location.");
+        setLocationError(error.message || t(language, "couldNotDetectLocation"));
         setDetecting(false);
       },
       { enableHighAccuracy: true, timeout: 12_000, maximumAge: 10 * 60_000 },
@@ -473,22 +613,23 @@ function LocationTab({ settings, update, coordinates, timeZone }: SettingsTabPro
 
   return (
     <>
-      <Section title="Location">
-        <SettingRow label="Mode" control={<Segmented values={["Automatic", "Manual"]} active={settings.locationMode === "automatic" ? "Automatic" : "Manual"} onPick={(value) => update({ locationMode: value === "Automatic" ? "automatic" : "manual" })} />} />
-        <SettingRow label="Detect my location" subLabel={locationError ?? undefined} control={<button className="small-button" onClick={detectLocation} disabled={detecting}><LocateFixed size={15} /> {detecting ? "Detecting" : "Detect"}</button>} />
-        <SettingRow label="Latitude" control={<NumberInput value={coordinates.latitude} onChange={(value) => setCoordinate("latitude", value)} />} />
-        <SettingRow label="Longitude" control={<NumberInput value={coordinates.longitude} onChange={(value) => setCoordinate("longitude", value)} />} />
-        <SettingRow label="Elevation (m)" control={<NumberInput value={coordinates.elevation ?? 0} onChange={(value) => setCoordinate("elevation", value)} />} />
+      <Section title={t(language, "location")}>
+        <SettingRow label={t(language, "mode")} control={<Segmented values={[t(language, "automatic"), t(language, "manual")]} active={settings.locationMode === "automatic" ? t(language, "automatic") : t(language, "manual")} onPick={(value) => update({ locationMode: value === t(language, "automatic") ? "automatic" : "manual" })} />} />
+        <SettingRow label={t(language, "detectMyLocation")} subLabel={locationError ?? undefined} control={<button className="small-button" onClick={detectLocation} disabled={detecting}><LocateFixed size={15} /> {detecting ? t(language, "detecting") : t(language, "detect")}</button>} />
+        <SettingRow label={t(language, "latitude")} control={<NumberInput value={coordinates.latitude} onChange={(value) => setCoordinate("latitude", value)} />} />
+        <SettingRow label={t(language, "longitude")} control={<NumberInput value={coordinates.longitude} onChange={(value) => setCoordinate("longitude", value)} />} />
+        <SettingRow label={t(language, "elevationMeters")} control={<NumberInput value={coordinates.elevation ?? 0} onChange={(value) => setCoordinate("elevation", value)} />} />
+        {detectedCountryCode && <SettingRow label={t(language, "detectedCountry")} control={<span className="value">{detectedCountryCode}</span>} />}
       </Section>
-      <Section title="Master timezone">
-        <SettingRow label="Timezone" control={<Segmented values={["Follow system", "Pick explicitly"]} active={settings.timeZoneMode.kind === "system" ? "Follow system" : "Pick explicitly"} onPick={(value) => update({ timeZoneMode: value === "Follow system" ? { kind: "system" } : { kind: "explicit", identifier: timeZone } })} />} />
-        <SettingRow label="Resolved" control={<span className="value">{timeZone}</span>} />
+      <Section title={t(language, "masterTimezone")}>
+        <SettingRow label={t(language, "timezone")} control={<Segmented values={[t(language, "followSystemTimezone"), t(language, "pickExplicitly")]} active={settings.timeZoneMode.kind === "system" ? t(language, "followSystemTimezone") : t(language, "pickExplicitly")} onPick={(value) => update({ timeZoneMode: value === t(language, "followSystemTimezone") ? { kind: "system" } : { kind: "explicit", identifier: timeZone } })} />} />
+        <SettingRow label={t(language, "resolved")} control={<span className="value">{timeZone}</span>} />
       </Section>
     </>
   );
 }
 
-function CalculationTab({ settings, update }: SettingsTabProps) {
+function CalculationTab({ settings, update, language, detectedCountryCode, resolvedMethodId }: SettingsTabProps & { language: SupportedLanguage; detectedCountryCode?: string; resolvedMethodId: string }) {
   const setManualTime = (prayer: Prayer, minutes: number) => {
     update({
       calculationMode: "manual",
@@ -498,38 +639,39 @@ function CalculationTab({ settings, update }: SettingsTabProps) {
 
   return (
     <>
-      <Section title="Source">
-        <SettingRow label="Time source" control={<Segmented values={["Calculated", "Manual (fixed)"]} active={settings.calculationMode === "calculated" ? "Calculated" : "Manual (fixed)"} onPick={(value) => update({ calculationMode: value === "Calculated" ? "calculated" : "manual" })} />} />
+      <Section title={t(language, "source")}>
+        <SettingRow label={t(language, "timeSource")} control={<Segmented values={[t(language, "calculated"), t(language, "manualFixed")]} active={settings.calculationMode === "calculated" ? t(language, "calculated") : t(language, "manualFixed")} onPick={(value) => update({ calculationMode: value === t(language, "calculated") ? "calculated" : "manual" })} />} />
       </Section>
       {settings.calculationMode === "calculated" && <>
-        <Section title="Method">
-          <SettingRow label="Calculation method" control={<NativeSelect value={settings.methodId} onChange={(methodId) => update({ methodId, autoDetectMethod: false })} options={builtInMethods.map((method) => [method.id, method.displayName])} />} />
-          <SettingRow label="Asr (madhab)" control={<NativeSelect value={settings.hanafiAsr ? "hanafi" : "standard"} onChange={(value) => update({ hanafiAsr: value === "hanafi" })} options={[["standard", "Standard"], ["hanafi", "Hanafi"]]} />} />
-          <SettingRow label="High-latitude rule" control={<NativeSelect value={settings.highLatitudeRule} onChange={(highLatitudeRule) => update({ highLatitudeRule })} options={[["automatic", "Automatic (recommended)"], ["none", "None"], ["middleOfNight", "Middle of night"], ["seventhOfNight", "One-seventh"], ["angleBased", "Angle-based"]]} />} />
+        <Section title={t(language, "method")}>
+          <SettingRow label={t(language, "calculationMethod")} control={<NativeSelect value={settings.autoDetectMethod ? resolvedMethodId : settings.methodId} onChange={(methodId) => update({ methodId, autoDetectMethod: false })} options={builtInMethods.map((method) => [method.id, method.displayName])} />} />
+          <SettingRow label={t(language, "asrMadhab")} control={<NativeSelect value={settings.hanafiAsr ? "hanafi" : "standard"} onChange={(value) => update({ hanafiAsr: value === "hanafi" })} options={[["standard", t(language, "standard")], ["hanafi", t(language, "hanafi")]]} />} />
+          <SettingRow label={t(language, "highLatitudeRule")} control={<NativeSelect value={settings.highLatitudeRule} onChange={(highLatitudeRule) => update({ highLatitudeRule })} options={[["automatic", t(language, "automaticRecommended")], ["none", t(language, "none")], ["middleOfNight", t(language, "middleOfNight")], ["seventhOfNight", t(language, "oneSeventh")], ["angleBased", t(language, "angleBased")]]} />} />
         </Section>
-        <Section title="Automation">
-          <SettingRow label="Auto-detect method from location" control={<Switch on={settings.autoDetectMethod} onClick={() => update({ autoDetectMethod: !settings.autoDetectMethod })} />} />
+        <Section title={t(language, "automation")}>
+          <SettingRow label={t(language, "autoDetectMethod")} control={<Switch on={settings.autoDetectMethod} onClick={() => update({ autoDetectMethod: !settings.autoDetectMethod })} />} />
+          {settings.autoDetectMethod && <SettingRow label={t(language, "detectedMethod")} subLabel={t(language, "methodHint", { country: detectedCountryCode ?? t(language, "systemDetected") })} control={<span className="value">{resolveMethod(resolvedMethodId, settings.hanafiAsr, settings.manualParameters)?.displayName ?? MWLAdapter.displayName}</span>} />}
         </Section>
       </>}
-      <Section title="Manual fixed schedule">
+      <Section title={t(language, "manualFixedSchedule")}>
         <SettingRow
-          label="Status"
-          subLabel="Editing any jamaat time switches the app to Manual fixed mode."
+          label={t(language, "status")}
+          subLabel={t(language, "manualScheduleHelp")}
           control={settings.calculationMode === "manual"
-            ? <span className="status-pill on">Active</span>
-            : <button className="small-button" onClick={() => update({ calculationMode: "manual" })}>Use manual schedule</button>}
+            ? <span className="status-pill on">{t(language, "active")}</span>
+            : <button className="small-button" onClick={() => update({ calculationMode: "manual" })}>{t(language, "useManualSchedule")}</button>}
         />
-        <SettingRow label="Adhan before jamaat" control={<NumberInput value={settings.azanBeforeJamaat} onChange={(azanBeforeJamaat) => update({ calculationMode: "manual", azanBeforeJamaat })} />} />
-        <SettingRow label="Block screen at prayer time" subLabel="Uses Focus Mode at the exact manual jamaat time." control={<Switch on={settings.focusModeEnabled} onClick={() => update({ focusModeEnabled: !settings.focusModeEnabled })} />} />
+        <SettingRow label={t(language, "adhanBeforeJamaat")} control={<NumberInput value={settings.azanBeforeJamaat} onChange={(azanBeforeJamaat) => update({ calculationMode: "manual", azanBeforeJamaat })} />} />
+        <SettingRow label={t(language, "blockScreenAtPrayerTime")} subLabel={t(language, "blockScreenHelp")} control={<Switch on={settings.focusModeEnabled} onClick={() => update({ focusModeEnabled: !settings.focusModeEnabled })} />} />
         {(["fajr", "dhuhr", "asr", "maghrib", "isha"] as Prayer[]).map((prayer) => (
-          <SettingRow key={prayer} label={prayerNames[prayer]} control={<TimeInput value={settings.jamaatTimes[prayer] ?? defaultJamaatTimes[prayer] ?? 0} onChange={(minutes) => setManualTime(prayer, minutes)} />} />
+          <SettingRow key={prayer} label={prayerLabel(language, prayer)} control={<TimeInput value={settings.jamaatTimes[prayer] ?? defaultJamaatTimes[prayer] ?? 0} onChange={(minutes) => setManualTime(prayer, minutes)} />} />
         ))}
       </Section>
     </>
   );
 }
 
-function NotificationsTab({ settings, update }: SettingsTabProps) {
+function NotificationsTab({ settings, update, language }: SettingsTabProps & { language: SupportedLanguage }) {
   const updatePrayer = (prayer: Prayer, patch: Partial<PrayerNotificationConfig>) => {
     const current = settings.notifications[prayer] ?? defaultPrayerNotification();
     update({ notifications: { ...settings.notifications, [prayer]: { ...current, ...patch } } });
@@ -551,26 +693,26 @@ function NotificationsTab({ settings, update }: SettingsTabProps) {
 
   return (
     <>
-      <Section title="Master">
-        <SettingRow label="Enable notifications" subLabel="Master switch for all prayer alerts." control={<Switch on={settings.masterNotificationsEnabled} onClick={() => update({ masterNotificationsEnabled: !settings.masterNotificationsEnabled })} />} />
-        <SettingRow label="Sample" control={<button className="small-button" onClick={() => sendDesktopNotification("Prayer Times", "Sample prayer notification from the Windows app.")}><Bell size={15} /> Send sample</button>} />
+      <Section title={t(language, "master")}>
+        <SettingRow label={t(language, "enableNotifications")} subLabel={t(language, "notificationsHelp")} control={<Switch on={settings.masterNotificationsEnabled} onClick={() => update({ masterNotificationsEnabled: !settings.masterNotificationsEnabled })} />} />
+        <SettingRow label={t(language, "sample")} control={<button className="small-button" onClick={() => sendDesktopNotification(t(language, "appTitle"), t(language, "sampleBody"))}><Bell size={15} /> {t(language, "sendSample")}</button>} />
       </Section>
-      <Section title="Defaults">
-        <SettingRow label="Default sound" control={<><button className="icon-button" onClick={previewDefaultSound} title="Preview sound"><PlayCircle size={18} /></button><NativeSelect value={settings.notificationDefaults.sound} onChange={(sound) => update({ notificationDefaults: { ...settings.notificationDefaults, sound } })} options={[["none", "None"], ["systemDefault", "Default"], ["softChime", "Soft chime"], ["takbir", "Takbir"], ["adhanMakkah", "Adhan (Makkah)"], ["adhanMadinah", "Adhan (Madinah)"]]} /></>} />
-        <SettingRow label="Play full Adhan audio" control={<Switch on={settings.notificationDefaults.playFullAdhan} onClick={() => update({ notificationDefaults: { ...settings.notificationDefaults, playFullAdhan: !settings.notificationDefaults.playFullAdhan } })} />} />
-        <SettingRow label="Early reminder" control={<NativeSelect value={String(settings.notificationDefaults.earlyReminderMinutes)} onChange={(value) => update({ notificationDefaults: { ...settings.notificationDefaults, earlyReminderMinutes: Number(value) } })} options={[["0", "Off"], ["5", "5 min before"], ["10", "10 min before"], ["15", "15 min before"], ["30", "30 min before"]]} />} />
-        <SettingRow label="Iqamah reminder" control={<NativeSelect value={String(settings.notificationDefaults.iqamahOffsetMinutes)} onChange={(value) => update({ notificationDefaults: { ...settings.notificationDefaults, iqamahOffsetMinutes: Number(value) } })} options={[["0", "Off"], ["5", "5 min after"], ["10", "10 min after"], ["15", "15 min after"], ["20", "20 min after"]]} />} />
+      <Section title={t(language, "defaults")}>
+        <SettingRow label={t(language, "defaultSound")} control={<><button className="icon-button" onClick={previewDefaultSound} title={t(language, "previewSound")}><PlayCircle size={18} /></button><NativeSelect value={settings.notificationDefaults.sound} onChange={(sound) => update({ notificationDefaults: { ...settings.notificationDefaults, sound } })} options={[["none", t(language, "none")], ["systemDefault", t(language, "defaultSoundName")], ["softChime", t(language, "softChime")], ["takbir", "Takbir"], ["adhanMakkah", t(language, "adhanMakkah")], ["adhanMadinah", t(language, "adhanMadinah")]]} /></>} />
+        <SettingRow label={t(language, "playFullAdhanAudio")} control={<Switch on={settings.notificationDefaults.playFullAdhan} onClick={() => update({ notificationDefaults: { ...settings.notificationDefaults, playFullAdhan: !settings.notificationDefaults.playFullAdhan } })} />} />
+        <SettingRow label={t(language, "earlyReminder")} control={<NativeSelect value={String(settings.notificationDefaults.earlyReminderMinutes)} onChange={(value) => update({ notificationDefaults: { ...settings.notificationDefaults, earlyReminderMinutes: Number(value) } })} options={[["0", t(language, "off")], ["5", t(language, "minutesBefore", { minutes: 5 })], ["10", t(language, "minutesBefore", { minutes: 10 })], ["15", t(language, "minutesBefore", { minutes: 15 })], ["30", t(language, "minutesBefore", { minutes: 30 })]]} />} />
+        <SettingRow label={t(language, "iqamahReminder")} control={<NativeSelect value={String(settings.notificationDefaults.iqamahOffsetMinutes)} onChange={(value) => update({ notificationDefaults: { ...settings.notificationDefaults, iqamahOffsetMinutes: Number(value) } })} options={[["0", t(language, "off")], ["5", t(language, "minutesAfter", { minutes: 5 })], ["10", t(language, "minutesAfter", { minutes: 10 })], ["15", t(language, "minutesAfter", { minutes: 15 })], ["20", t(language, "minutesAfter", { minutes: 20 })]]} />} />
       </Section>
-      <Section title="Per prayer">
+      <Section title={t(language, "perPrayer")}>
         <div className="matrix">
-          <div className="matrix-head"><span /> <span>At time</span><span>Adhan</span><span>Before</span><span /></div>
+          <div className="matrix-head"><span /> <span>{t(language, "atTime")}</span><span>{t(language, "adhan")}</span><span>{t(language, "before")}</span><span /></div>
           {(["fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"] as Prayer[]).map((prayer) => (
             <div className="matrix-row" key={prayer}>
-              <span>{prayerNames[prayer]}</span>
+              <span>{prayerLabel(language, prayer)}</span>
               <Switch on={resolvedNotification(settings, prayer).notify} small onClick={() => updatePrayer(prayer, { notify: !resolvedNotification(settings, prayer).notify })} />
               <Switch on={resolvedNotification(settings, prayer).playFullAdhan} small disabled={prayer === "sunrise"} onClick={() => updatePrayer(prayer, { playFullAdhan: !resolvedNotification(settings, prayer).playFullAdhan })} />
               <Switch on={resolvedNotification(settings, prayer).earlyReminderEnabled} small onClick={() => toggleReminder(prayer)} />
-              <button className="icon-button" onClick={() => playOneShot(resolvedNotification(settings, prayer).sound, resolvedNotification(settings, prayer).playFullAdhan)} title={`Preview ${prayerNames[prayer]}`}><SlidersHorizontal size={16} /></button>
+              <button className="icon-button" onClick={() => playOneShot(resolvedNotification(settings, prayer).sound, resolvedNotification(settings, prayer).playFullAdhan)} title={`${t(language, "previewSound")} ${prayerLabel(language, prayer)}`}><SlidersHorizontal size={16} /></button>
             </div>
           ))}
         </div>
@@ -579,19 +721,19 @@ function NotificationsTab({ settings, update }: SettingsTabProps) {
   );
 }
 
-function FocusTab({ settings, update, onPreview }: SettingsTabProps & { onPreview: () => void }) {
+function FocusTab({ settings, update, language, onPreview }: SettingsTabProps & { language: SupportedLanguage; onPreview: () => void }) {
   return (
     <>
-      <Section title="Focus Mode">
-        <SettingRow label="Enable Focus Mode" subLabel="Covers the entire screen during prayer time." control={<Switch on={settings.focusModeEnabled} onClick={() => update({ focusModeEnabled: !settings.focusModeEnabled })} />} />
+      <Section title={t(language, "focusMode")}>
+        <SettingRow label={t(language, "enableFocusMode")} subLabel={t(language, "focusModeHelp")} control={<Switch on={settings.focusModeEnabled} onClick={() => update({ focusModeEnabled: !settings.focusModeEnabled })} />} />
       </Section>
-      <Section title="Behaviour">
-        <SettingRow label="Prayer duration" control={<NumberInput value={settings.focusDurationMinutes} onChange={(focusDurationMinutes) => update({ focusDurationMinutes })} />} />
-        <SettingRow label="Blur intensity" control={<NativeSelect value={settings.focusBlurIntensity} onChange={(focusBlurIntensity) => update({ focusBlurIntensity })} options={[["low", "Low"], ["medium", "Medium"], ["high", "High"], ["opaque", "Opaque"]]} />} />
-        <SettingRow label="Trigger on" control={<NativeSelect value={settings.focusTrigger} onChange={(focusTrigger) => update({ focusTrigger })} options={[["obligatory", "Obligatory prayers"], ["all", "All prayer times"], ["fajrIsha", "Fajr & Isha only"]]} />} />
-        <SettingRow label="Emergency exit" subLabel="Allow Esc to exit early on Windows." control={<Switch on={settings.focusEmergencyExitEnabled} onClick={() => update({ focusEmergencyExitEnabled: !settings.focusEmergencyExitEnabled })} />} />
+      <Section title={t(language, "behaviour")}>
+        <SettingRow label={t(language, "prayerDuration")} control={<NumberInput value={settings.focusDurationMinutes} onChange={(focusDurationMinutes) => update({ focusDurationMinutes })} />} />
+        <SettingRow label={t(language, "blurIntensity")} control={<NativeSelect value={settings.focusBlurIntensity} onChange={(focusBlurIntensity) => update({ focusBlurIntensity })} options={[["low", t(language, "low")], ["medium", t(language, "medium")], ["high", t(language, "high")], ["opaque", t(language, "opaque")]]} />} />
+        <SettingRow label={t(language, "triggerOn")} control={<NativeSelect value={settings.focusTrigger} onChange={(focusTrigger) => update({ focusTrigger })} options={[["obligatory", t(language, "obligatoryPrayers")], ["all", t(language, "allPrayerTimes")], ["fajrIsha", t(language, "fajrIshaOnly")]]} />} />
+        <SettingRow label={t(language, "emergencyExit")} subLabel={t(language, "emergencyExitHelp")} control={<Switch on={settings.focusEmergencyExitEnabled} onClick={() => update({ focusEmergencyExitEnabled: !settings.focusEmergencyExitEnabled })} />} />
       </Section>
-      <button className="try-focus" onClick={onPreview}><EyeOff size={16} /> Try it for 10 seconds</button>
+      <button className="try-focus" onClick={onPreview}><EyeOff size={16} /> {t(language, "tryItForTenSeconds")}</button>
     </>
   );
 }
@@ -710,30 +852,6 @@ function timeToMinutes(value: string): number | null {
   return hour * 60 + minute;
 }
 
-function formatHijriDate(date: Date, dayAdjustment: number, timeZone: string): string {
-  const adjusted = new Date(date.getTime() + Math.round(dayAdjustment) * 86_400_000);
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      calendar: "islamic-umalqura",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      timeZone,
-    }).format(adjusted);
-  } catch {
-    try {
-      return new Intl.DateTimeFormat("en-u-ca-islamic", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        timeZone,
-      }).format(adjusted);
-    } catch {
-      return "";
-    }
-  }
-}
-
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(Math.max(0, totalSeconds) / 60);
   const seconds = Math.max(0, totalSeconds) % 60;
@@ -744,10 +862,12 @@ function FocusPreview({
   settings,
   prayer,
   onDone,
+  language,
 }: {
   settings: AppSettings;
   prayer: Prayer;
   onDone: () => void;
+  language: SupportedLanguage;
 }) {
   const [remaining, setRemaining] = useState(() => Math.max(1, settings.focusDurationMinutes) * 60);
 
@@ -771,32 +891,32 @@ function FocusPreview({
   return (
     <div className={`focus-preview ${settings.focusBlurIntensity}`}>
       <div>
-        <span>Prayer in progress</span>
-        <strong>{prayerNames[prayer]}</strong>
-        <p>Pause, make wudu, and step away from the screen.</p>
+        <span>{t(language, "prayerInProgress")}</span>
+        <strong>{prayerLabel(language, prayer)}</strong>
+        <p>{t(language, "focusPauseBody")}</p>
         <em>{formatDuration(remaining)}</em>
-        {settings.focusEmergencyExitEnabled && <small>Press Esc to exit early</small>}
+        {settings.focusEmergencyExitEnabled && <small>{t(language, "pressEscToExit")}</small>}
       </div>
     </div>
   );
 }
 
-function Onboarding({ settings, update }: SettingsTabProps) {
+function Onboarding({ settings, update, language }: SettingsTabProps & { language: SupportedLanguage }) {
   const [step, setStep] = useState(0);
   const steps = [
     {
-      title: "Set Your Location",
-      body: "Use automatic location detection or enter coordinates manually so prayer times match your city.",
-      action: <button className="small-button" onClick={() => update({ locationMode: "automatic" })}><LocateFixed size={15} /> Use automatic</button>,
+      title: t(language, "setYourLocation"),
+      body: t(language, "setLocationBody"),
+      action: <button className="small-button" onClick={() => update({ locationMode: "automatic" })}><LocateFixed size={15} /> {t(language, "useAutomatic")}</button>,
     },
     {
-      title: "Choose Calculation",
+      title: t(language, "chooseCalculation"),
       body: `The app starts with ${resolveMethod(settings.methodId, settings.hanafiAsr, settings.manualParameters)?.displayName ?? "MWL"}. You can switch to local authority methods anytime.`,
-      action: <span className="value">{settings.hanafiAsr ? "Hanafi Asr" : "Standard Asr"}</span>,
+      action: <span className="value">{settings.hanafiAsr ? t(language, "hanafi") : t(language, "standard")}</span>,
     },
     {
-      title: "Keep Prayer Alerts On",
-      body: "Windows notifications, reminders, tray access, Focus Mode, and Adhan playback are ready to use.",
+      title: t(language, "keepPrayerAlertsOn"),
+      body: t(language, "keepPrayerAlertsBody"),
       action: <Switch on={settings.masterNotificationsEnabled} onClick={() => update({ masterNotificationsEnabled: !settings.masterNotificationsEnabled })} />,
     },
   ];
@@ -805,16 +925,16 @@ function Onboarding({ settings, update }: SettingsTabProps) {
   return (
     <div className="onboarding">
       <section>
-        <span className="eyebrow">First run setup</span>
+        <span className="eyebrow">{t(language, "firstRunSetup")}</span>
         <strong>{current.title}</strong>
         <p>{current.body}</p>
         <div className="onboarding-action">{current.action}</div>
         <div className="onboarding-dots">{steps.map((_, index) => <i key={index} className={index === step ? "active" : ""} />)}</div>
         <footer>
-          <button className="small-button" onClick={() => update({ didCompleteOnboarding: true })}>Skip</button>
-          {step > 0 && <button className="small-button" onClick={() => setStep((value) => value - 1)}>Back</button>}
+          <button className="small-button" onClick={() => update({ didCompleteOnboarding: true })}>{t(language, "skip")}</button>
+          {step > 0 && <button className="small-button" onClick={() => setStep((value) => value - 1)}>{t(language, "back")}</button>}
           <button className="small-button primary" onClick={() => step === steps.length - 1 ? update({ didCompleteOnboarding: true }) : setStep((value) => value + 1)}>
-            {step === steps.length - 1 ? "Finish" : "Next"}
+            {step === steps.length - 1 ? t(language, "finish") : t(language, "nextButton")}
           </button>
         </footer>
       </section>
@@ -978,6 +1098,77 @@ async function startWidgetDrag() {
   }
 }
 
+function buildRuntimeSchedule(
+  today: PrayerTimes,
+  tomorrow: PrayerTimes,
+  settings: AppSettings,
+  timeZone: string,
+  language: SupportedLanguage,
+): RuntimeScheduledEvent[] {
+  const events: RuntimeScheduledEvent[] = [];
+  for (const day of [today, tomorrow]) {
+    for (const entry of orderedTimes(day)) {
+      const cfg = resolvedNotification(settings, entry.prayer);
+      const label = prayerLabel(language, entry.prayer);
+      const civil = civilDateFromDate(entry.time, timeZone);
+      const dayKey = `${civil.year}-${civil.month}-${civil.day}`;
+      if (settings.masterNotificationsEnabled && cfg.notify) {
+        events.push({
+          id: `${dayKey}:${entry.prayer}:adhan`,
+          prayer: entry.prayer,
+          atMs: notificationTime(entry.prayer, entry.time, settings).getTime(),
+          title: `${label} time`,
+          body: `${label} is now at ${formatClock(entry.time, timeZone, language)}.`,
+          playSound: true,
+          sound: cfg.sound,
+          playFullAdhan: cfg.playFullAdhan,
+          startFocus: false,
+        });
+        if (cfg.earlyReminderEnabled) {
+          events.push({
+            id: `${dayKey}:${entry.prayer}:early`,
+            prayer: entry.prayer,
+            atMs: entry.time.getTime() - cfg.earlyLeadMinutes * 60_000,
+            title: `${label} soon`,
+            body: `${label} starts in ${cfg.earlyLeadMinutes} minutes.`,
+            playSound: false,
+            sound: undefined,
+            playFullAdhan: false,
+            startFocus: false,
+          });
+        }
+        if (isObligatory(entry.prayer) && cfg.iqamahOffsetMinutes > 0) {
+          events.push({
+            id: `${dayKey}:${entry.prayer}:iqamah`,
+            prayer: entry.prayer,
+            atMs: entry.time.getTime() + cfg.iqamahOffsetMinutes * 60_000,
+            title: `${label} iqamah`,
+            body: `${label} iqamah reminder.`,
+            playSound: false,
+            sound: undefined,
+            playFullAdhan: false,
+            startFocus: false,
+          });
+        }
+      }
+      if (shouldFocus(settings, entry.prayer)) {
+        events.push({
+          id: `${dayKey}:${entry.prayer}:focus`,
+          prayer: entry.prayer,
+          atMs: entry.time.getTime(),
+          title: `${label} focus`,
+          body: `${label} is in progress.`,
+          playSound: false,
+          sound: undefined,
+          playFullAdhan: false,
+          startFocus: true,
+        });
+      }
+    }
+  }
+  return events;
+}
+
 async function fireDueAlerts({
   now,
   today,
@@ -1120,12 +1311,12 @@ async function quitDesktop() {
   }
 }
 
-function tabTitle(tab: Tab): string {
+function tabTitle(tab: Tab, language: SupportedLanguage): string {
   switch (tab) {
-    case "general": return "General";
-    case "location": return "Location & Time";
-    case "calculation": return "Calculation";
-    case "notifications": return "Notifications";
-    case "focus": return "Focus Mode";
+    case "general": return t(language, "general");
+    case "location": return t(language, "locationTime");
+    case "calculation": return t(language, "calculation");
+    case "notifications": return t(language, "notifications");
+    case "focus": return t(language, "focusMode");
   }
 }

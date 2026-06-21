@@ -1,8 +1,13 @@
+mod runtime_scheduler;
+
 use tauri::{
   menu::{Menu, MenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
   AppHandle, Manager, WindowEvent,
 };
+use tauri_plugin_updater::Builder as UpdaterBuilder;
+
+use runtime_scheduler::{init_scheduler, sync_runtime_schedule, RuntimeSchedulePayload, RuntimeSchedulerState};
 
 #[tauri::command]
 fn show_main(app: AppHandle) -> Result<(), String> {
@@ -48,6 +53,23 @@ fn quit_app(app: AppHandle) {
 
 #[tauri::command]
 fn start_focus_mode(app: AppHandle) -> Result<(), String> {
+  start_focus_mode_impl(&app)
+}
+
+#[tauri::command]
+fn end_focus_mode(app: AppHandle) -> Result<(), String> {
+  end_focus_mode_impl(&app)
+}
+
+#[tauri::command]
+fn sync_runtime_schedule_command(
+  state: tauri::State<'_, RuntimeSchedulerState>,
+  payload: RuntimeSchedulePayload,
+) -> Result<(), String> {
+  sync_runtime_schedule(state, payload)
+}
+
+fn start_focus_mode_impl(app: &AppHandle) -> Result<(), String> {
   let window = app.get_webview_window("main").ok_or("main window not found")?;
   window.show().map_err(|e| e.to_string())?;
   window.set_always_on_top(true).map_err(|e| e.to_string())?;
@@ -55,8 +77,7 @@ fn start_focus_mode(app: AppHandle) -> Result<(), String> {
   window.set_focus().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn end_focus_mode(app: AppHandle) -> Result<(), String> {
+fn end_focus_mode_impl(app: &AppHandle) -> Result<(), String> {
   let window = app.get_webview_window("main").ok_or("main window not found")?;
   window.set_fullscreen(false).map_err(|e| e.to_string())?;
   window.set_always_on_top(false).map_err(|e| e.to_string())?;
@@ -74,7 +95,18 @@ pub fn run() {
     ))
     .plugin(tauri_plugin_store::Builder::default().build())
     .plugin(tauri_plugin_shell::init())
-    .invoke_handler(tauri::generate_handler![show_main, hide_main, show_widget, hide_widget, toggle_widget, quit_app, start_focus_mode, end_focus_mode])
+    .plugin(UpdaterBuilder::new().build())
+    .invoke_handler(tauri::generate_handler![
+      show_main,
+      hide_main,
+      show_widget,
+      hide_widget,
+      toggle_widget,
+      quit_app,
+      start_focus_mode,
+      end_focus_mode,
+      sync_runtime_schedule_command
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -83,6 +115,7 @@ pub fn run() {
             .build(),
         )?;
       }
+      app.manage(init_scheduler(app.handle().clone()));
       build_tray(app.handle())?;
       if let Some(window) = app.get_webview_window("main") {
         let window_to_hide = window.clone();

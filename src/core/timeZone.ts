@@ -35,16 +35,16 @@ export function minutesSinceMidnight(date: Date, timeZone: string): number {
   return parts.hour * 60 + parts.minute + (parts.second >= 30 ? 1 : 0);
 }
 
-export function formatClock(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+export function formatClock(date: Date, timeZone: string, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone,
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
 }
 
-export function formatLongDate(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+export function formatLongDate(date: Date, timeZone: string, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone,
     dateStyle: "full",
   }).format(date);
