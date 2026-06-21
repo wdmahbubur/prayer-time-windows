@@ -21,8 +21,8 @@ Download the latest Windows installer from [Releases](https://github.com/wdmahbu
 
 Recommended:
 
-- `Prayer.Times_0.1.8_x64_en-US.msi` for standard Windows installation.
-- `Prayer.Times_0.1.8_x64-setup.exe` as an alternative setup installer.
+- `Prayer.Times_0.1.9_x64_en-US.msi` for standard Windows installation.
+- `Prayer.Times_0.1.9_x64-setup.exe` as an alternative setup installer.
 
 > **First launch / SmartScreen:** the installers are currently unsigned. Windows SmartScreen may show a warning until the app is signed with a trusted code-signing certificate and builds reputation.
 
@@ -157,8 +157,8 @@ After a successful Tauri build, installers are written under:
 Typical outputs:
 
 ```text
-msi\Prayer Times_0.1.8_x64_en-US.msi
-nsis\Prayer Times_0.1.8_x64-setup.exe
+msi\Prayer Times_0.1.9_x64_en-US.msi
+nsis\Prayer Times_0.1.9_x64-setup.exe
 ```
 
 ## Code Signing
@@ -210,6 +210,12 @@ git push origin v0.1.9
 To re-run a release for an existing tag, open **Actions -> Release -> Run workflow** and enter the tag, for example `v0.1.9`.
 
 ## Release Notes
+
+### 0.1.9
+
+- Added real updater signing and release plumbing.
+- Added a native runtime scheduler for notifications and focus events.
+- Fixed GitHub Actions lockfile compatibility and release source selection.
 
 ### 0.1.8
 
