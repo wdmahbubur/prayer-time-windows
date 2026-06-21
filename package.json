@@ -4,6 +4,10 @@
   "private": true,
   "license": "MIT",
   "packageManager": "npm@10.9.3",
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10.9.3 <11"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
