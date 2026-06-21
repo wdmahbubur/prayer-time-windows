@@ -24,7 +24,6 @@ jobs:
     env:
       TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
       SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref_name }}
-      CARGO_TARGET_DIR: target
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -47,10 +46,14 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Configure Cargo target directory
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_DIR=$env:RUNNER_TEMP\cargo-target"
+
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: src-tauri -> ${{ runner.temp }}\cargo-target
 
       - name: Install dependencies
         run: npm ci
@@ -91,20 +94,50 @@ jobs:
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
             throw "TAURI_SIGNING_PRIVATE_KEY secret is required to publish signed updater assets."
           }
+
+          $targetDir = [System.IO.Path]::GetFullPath($env:CARGO_TARGET_DIR)
+          $candidateBundleRoots = @(
+            (Join-Path $targetDir "release\bundle"),
+            (Join-Path $PWD "target\release\bundle"),
+            (Join-Path $PWD "src-tauri\target\release\bundle"),
+            (Join-Path $env:RUNNER_TEMP "cargo-target\release\bundle")
+          ) | Select-Object -Unique
+
+          $bundleRoot = $candidateBundleRoots | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $bundleRoot) {
+            Write-Host "Checked bundle roots:"
+            $candidateBundleRoots | ForEach-Object { Write-Host "  $_" }
+            throw "Could not find Tauri bundle output directory."
+          }
+
+          Write-Host "Using bundle root: $bundleRoot"
           New-Item -ItemType Directory -Force release-assets | Out-Null
-          Copy-Item "$env:CARGO_TARGET_DIR\release\bundle\msi\*.msi" release-assets\
-          Copy-Item "$env:CARGO_TARGET_DIR\release\bundle\nsis\*.exe" release-assets\
-          Copy-Item "$env:CARGO_TARGET_DIR\release\bundle\msi\*.zip" release-assets\
-          Copy-Item "$env:CARGO_TARGET_DIR\release\bundle\msi\*.sig" release-assets\
-          Copy-Item "$env:CARGO_TARGET_DIR\release\bundle\nsis\*.zip" release-assets\
-          Copy-Item "$env:CARGO_TARGET_DIR\release\bundle\nsis\*.sig" release-assets\
+
+          $assets = Get-ChildItem -Path $bundleRoot -Recurse -File -Include *.msi,*.exe,*.zip,*.sig
+          if (-not $assets) {
+            throw "No release assets were found under $bundleRoot."
+          }
+          $assets | Copy-Item -Destination release-assets -Force
+
+          $installers = Get-ChildItem release-assets -File | Where-Object { $_.Extension -in ".msi", ".exe" }
+          if (-not $installers) {
+            throw "Could not find MSI or EXE installer assets."
+          }
 
           $updaterZip = Get-ChildItem release-assets\*.zip | Where-Object { $_.Name -like '*.nsis.zip' } | Select-Object -First 1
           if (-not $updaterZip) {
-            throw "Could not find NSIS updater zip asset."
+            $updaterZip = Get-ChildItem release-assets\*.zip | Where-Object { $_.Name -like '*.msi.zip' } | Select-Object -First 1
+          }
+          if (-not $updaterZip) {
+            throw "Could not find Tauri updater zip asset."
           }
 
-          $signature = Get-Content "$($updaterZip.FullName).sig" -Raw
+          $signaturePath = "$($updaterZip.FullName).sig"
+          if (-not (Test-Path $signaturePath)) {
+            throw "Could not find updater signature for $($updaterZip.Name)."
+          }
+
+          $signature = Get-Content $signaturePath -Raw
           $releaseDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $latest = @{
             version = $env:TAG.TrimStart("v")
