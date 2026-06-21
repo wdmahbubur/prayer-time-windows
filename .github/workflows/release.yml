@@ -6,8 +6,12 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      ref:
+        description: "Git ref to build, for example main or a commit SHA"
+        required: true
+        default: "main"
       tag:
-        description: "Existing tag to release, for example v0.1.8"
+        description: "Release tag to publish, for example v0.1.9"
         required: true
 
 permissions:
@@ -19,15 +23,16 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+      SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref_name }}
       CARGO_TARGET_DIR: target
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
     steps:
-      - name: Checkout release tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -62,6 +67,15 @@ jobs:
           if ($tauriVersion -ne $version) {
             throw "Tauri version $tauriVersion does not match package.json version $version"
           }
+
+      - name: Create or update release tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f $env:TAG
+          git push origin "refs/tags/$env:TAG" --force
 
       - name: Run tests
         run: npm test
