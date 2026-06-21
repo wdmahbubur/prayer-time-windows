@@ -15,6 +15,9 @@ jobs:
   build:
     name: Test and build Windows app
     runs-on: windows-latest
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -45,6 +48,16 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+      - name: Disable updater artifacts when signing secrets are unavailable
+        if: ${{ !env.TAURI_SIGNING_PRIVATE_KEY }}
+        shell: pwsh
+        run: |
+          $configPath = "src-tauri/tauri.conf.json"
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json -Depth 100
+          $config.bundle.createUpdaterArtifacts = $false
+          $config | ConvertTo-Json -Depth 100 | Set-Content $configPath -Encoding utf8
+          Write-Host "Updater artifacts disabled for CI because signing secrets are unavailable."
 
       - name: Build Windows installers
         shell: pwsh
