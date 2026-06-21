@@ -3,6 +3,7 @@
   "version": "0.1.8",
   "private": true,
   "license": "MIT",
+  "packageManager": "npm@10.9.3",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
