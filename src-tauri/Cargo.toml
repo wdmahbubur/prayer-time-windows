@@ -2,7 +2,7 @@
 name = "app"
 version = "0.1.10"
 description = "Prayer Times for Windows"
-authors = ["Tareq Hasan, Windows port contributors"]
+authors = ["wdmahbubur, Windows port contributors"]
 license = "MIT"
 repository = ""
 edition = "2021"

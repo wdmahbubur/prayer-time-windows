@@ -43,6 +43,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "wdmahbubur",
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
