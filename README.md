@@ -21,8 +21,8 @@ Download the latest Windows installer from [Releases](https://github.com/wdmahbu
 
 Recommended:
 
-- `Prayer.Times_0.1.9_x64_en-US.msi` for standard Windows installation.
-- `Prayer.Times_0.1.9_x64-setup.exe` as an alternative setup installer.
+- `Prayer.Times_0.1.10_x64_en-US.msi` for standard Windows installation.
+- `Prayer.Times_0.1.10_x64-setup.exe` as an alternative setup installer.
 
 > **First launch / SmartScreen:** the installers are currently unsigned. Windows SmartScreen may show a warning until the app is signed with a trusted code-signing certificate and builds reputation.
 
@@ -157,8 +157,8 @@ After a successful Tauri build, installers are written under:
 Typical outputs:
 
 ```text
-msi\Prayer Times_0.1.9_x64_en-US.msi
-nsis\Prayer Times_0.1.9_x64-setup.exe
+msi\Prayer Times_0.1.10_x64_en-US.msi
+nsis\Prayer Times_0.1.10_x64-setup.exe
 ```
 
 ## Code Signing
@@ -200,16 +200,20 @@ npm run build
 5. Tag the release and push the tag:
 
 ```powershell
-git tag v0.1.9
+git tag v0.1.10
 git push origin main
-git push origin v0.1.9
+git push origin v0.1.10
 ```
 
 6. The `Release` workflow builds on `windows-latest`, runs tests, creates the MSI and setup EXE, uploads workflow artifacts, and attaches both installers to the GitHub Release.
 
-To re-run a release for an existing tag, open **Actions -> Release -> Run workflow** and enter the tag, for example `v0.1.9`.
+To re-run a release for an existing tag, open **Actions -> Release -> Run workflow** and enter the tag, for example `v0.1.10`.
 
 ## Release Notes
+
+### 0.1.10
+
+- Changed Focus Mode exit behavior so dismissing the screen blocker hides the blocker without opening the main app window.
 
 ### 0.1.9
 

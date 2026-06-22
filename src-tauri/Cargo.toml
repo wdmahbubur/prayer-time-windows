@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.9"
+version = "0.1.10"
 description = "Prayer Times for Windows"
 authors = ["Tareq Hasan, Windows port contributors"]
 license = "MIT"
