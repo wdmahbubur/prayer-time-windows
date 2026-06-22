@@ -124,17 +124,32 @@ jobs:
             throw "Could not find MSI or EXE installer assets."
           }
 
-          $updaterZip = Get-ChildItem release-assets\*.zip | Where-Object { $_.Name -like '*.nsis.zip' } | Select-Object -First 1
-          if (-not $updaterZip) {
-            $updaterZip = Get-ChildItem release-assets\*.zip | Where-Object { $_.Name -like '*.msi.zip' } | Select-Object -First 1
-          }
-          if (-not $updaterZip) {
-            throw "Could not find Tauri updater zip asset."
+          Get-ChildItem release-assets | Sort-Object Name | ForEach-Object {
+            Write-Host "Prepared asset: $($_.Name) ($($_.Length) bytes)"
           }
 
-          $signaturePath = "$($updaterZip.FullName).sig"
+          $updaterAsset = Get-ChildItem release-assets -File |
+            Where-Object {
+              $_.Extension -in ".msi", ".exe", ".zip" -and
+              (Test-Path "$($_.FullName).sig")
+            } |
+            Sort-Object `
+              @{ Expression = {
+                if ($_.Name -like "*.msi.zip") { 0 }
+                elseif ($_.Extension -eq ".msi") { 1 }
+                elseif ($_.Name -like "*.nsis.zip") { 2 }
+                elseif ($_.Name -like "*-setup.exe") { 3 }
+                else { 4 }
+              } },
+              Name |
+            Select-Object -First 1
+          if (-not $updaterAsset) {
+            throw "Could not find a signed Tauri updater asset. Expected a .msi, .exe, or .zip file with a matching .sig file."
+          }
+
+          $signaturePath = "$($updaterAsset.FullName).sig"
           if (-not (Test-Path $signaturePath)) {
-            throw "Could not find updater signature for $($updaterZip.Name)."
+            throw "Could not find updater signature for $($updaterAsset.Name)."
           }
 
           $signature = Get-Content $signaturePath -Raw
@@ -146,15 +161,12 @@ jobs:
             platforms = @{
               "windows-x86_64" = @{
                 signature = $signature.Trim()
-                url = "https://github.com/${{ github.repository }}/releases/download/$env:TAG/$($updaterZip.Name)"
+                url = "https://github.com/${{ github.repository }}/releases/download/$env:TAG/$($updaterAsset.Name)"
               }
             }
           } | ConvertTo-Json -Depth 6
           Set-Content -Path release-assets\latest.json -Value $latest -Encoding utf8
-
-          Get-ChildItem release-assets | ForEach-Object {
-            Write-Host "Prepared asset: $($_.Name) ($($_.Length) bytes)"
-          }
+          Write-Host "Prepared updater metadata for: $($updaterAsset.Name)"
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
