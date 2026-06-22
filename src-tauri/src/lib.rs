@@ -81,8 +81,7 @@ fn end_focus_mode_impl(app: &AppHandle) -> Result<(), String> {
   let window = app.get_webview_window("main").ok_or("main window not found")?;
   window.set_fullscreen(false).map_err(|e| e.to_string())?;
   window.set_always_on_top(false).map_err(|e| e.to_string())?;
-  window.show().map_err(|e| e.to_string())?;
-  window.set_focus().map_err(|e| e.to_string())
+  window.hide().map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -122,6 +121,8 @@ pub fn run() {
         window.on_window_event(move |event| {
           if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
+            let _ = window_to_hide.set_fullscreen(false);
+            let _ = window_to_hide.set_always_on_top(false);
             let _ = window_to_hide.hide();
           }
         });
